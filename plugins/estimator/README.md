@@ -16,7 +16,7 @@ claude plugin install estimator@vslipchenko
 ```
 
 Then restart Claude Code. The plugin needs the **Atlassian (Jira) MCP** connected
-(run `/mcp` to check). Repository: <https://github.com/vslipchenko/estimator>.
+(run `/mcp` to check). Repository: <https://github.com/vslipchenko/ai/tree/main/plugins/estimator>.
 
 ## Skills & commands at a glance
 
