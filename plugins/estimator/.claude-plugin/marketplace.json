@@ -1,0 +1,17 @@
+{
+  "name": "vslipchenko",
+  "owner": {
+    "name": "Vladyslav Slipchenko"
+  },
+  "metadata": {
+    "description": "Jira ticket estimation grounded in your team's resolved-ticket history.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "estimator",
+      "source": "./",
+      "description": "Estimate Jira tickets from your team's actual history. Pulls resolved tickets via the Atlassian MCP to build a baseline, then suggests effort/story-point estimates by comparing new work to similar past tickets."
+    }
+  ]
+}
