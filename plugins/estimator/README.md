@@ -11,7 +11,7 @@ past tickets.
 
 ```bash
 # register the marketplace, then install the plugin
-claude plugin marketplace add vslipchenko/estimator
+claude plugin marketplace add vslipchenko/ai
 claude plugin install estimator@vslipchenko
 ```
 
