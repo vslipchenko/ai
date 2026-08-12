@@ -47,6 +47,44 @@ AND/OR), so it's not something you'd pick as a target. It's the
 percent-encoding mechanism OData and RQL use internally, only when you ask
 for their output embedded in an actual URL rather than the raw expression.
 
+## What each format looks like
+
+Same scenario in every snippet — *"a group of people where students older
+than 20 and seniors younger than 80"*, resolved as
+`(group=student AND age>20) OR (group=senior AND age<80)` — so you can
+compare them directly. These match each reference file's own worked example.
+
+**OData `$filter`** (raw expression — the default; percent-encoded URL form
+only on request):
+```
+$filter=(group eq 'student' and age gt 20) or (group eq 'senior' and age lt 80)
+```
+
+**JQL:**
+```
+(group = "student" AND age > 20) OR (group = "senior" AND age < 80)
+```
+
+**MongoDB:**
+```json
+{ "$or": [
+    { "group": "student", "age": { "$gt": 20 } },
+    { "group": "senior",  "age": { "$lt": 80 } }
+]}
+```
+
+**SQL `WHERE`** (note `"group"` needs quoting — it's an ANSI/Postgres
+reserved word, a real illustration of the identifier-quoting rule, not a
+contrived one):
+```sql
+("group" = 'student' AND age > 20) OR ("group" = 'senior' AND age < 80)
+```
+
+**RQL** (function-call form; FIQL-shorthand `(group==student;age=gt=20),(group==senior;age=lt=80)` is equivalent):
+```
+or(and(eq(group,student),gt(age,20)),and(eq(group,senior),lt(age,80)))
+```
+
 ## How it works
 
 1. **You name the target format.** It's never guessed from context — if you
