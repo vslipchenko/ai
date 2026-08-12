@@ -23,7 +23,11 @@ See each plugin's own README for setup, usage, and requirements.
 
 ## Skills
 
-Standalone skills (not tied to a specific plugin) live in `skills/`. None yet.
+Standalone skills (not tied to a specific plugin) live in `skills/`.
+
+| Skill | Description |
+|---|---|
+| [`filter-translator`](skills/filter-translator) | Convert a plain-text filter description into a syntactically correct expression in OData `$filter`, JQL, MongoDB, SQL `WHERE`, or RQL — confirming the resolved logical expression with you before producing the final syntax. |
 
 ## License
 
