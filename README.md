@@ -28,6 +28,7 @@ Standalone skills (not tied to a specific plugin) live in `skills/`.
 | Skill | Description |
 |---|---|
 | [`filter-translator`](skills/filter-translator) | Convert a plain-text filter description into a syntactically correct expression in OData `$filter`, JQL, MongoDB, SQL `WHERE`, or RQL — confirming the resolved logical expression with you before producing the final syntax. |
+| [`password-generator`](skills/password-generator) | Generate cryptographically secure passwords or diceware-style passphrases via a bundled CSPRNG script, with entropy reported and single values delivered straight to the clipboard instead of being printed. |
 
 ## License
 
