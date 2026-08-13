@@ -11,7 +11,9 @@ constrained space instead of losing entropy to a biased construction.
 import argparse
 import json
 import math
+import platform
 import secrets
+import subprocess
 import sys
 from pathlib import Path
 
@@ -41,6 +43,30 @@ def build_charset(use_lower, use_upper, use_digits, use_symbols, no_ambiguous):
         if any(not cls for cls in classes):
             sys.exit("--no-ambiguous removed an entire character class; disable that class instead.")
     return classes
+
+
+def copy_to_clipboard(text):
+    """Tries platform clipboard tools in order; returns True on the first that
+    accepts the text. All generated values are pure ASCII, so no encoding/
+    codepage concerns across clip/pbcopy/xclip/wl-copy/xsel."""
+    system = platform.system()
+    if system == "Windows":
+        candidates = [["clip"]]
+    elif system == "Darwin":
+        candidates = [["pbcopy"]]
+    else:
+        candidates = [
+            ["xclip", "-selection", "clipboard"],
+            ["wl-copy"],
+            ["xsel", "--clipboard", "--input"],
+        ]
+    for cmd in candidates:
+        try:
+            subprocess.run(cmd, input=text.encode("utf-8"), check=True)
+            return True
+        except (FileNotFoundError, subprocess.CalledProcessError, OSError):
+            continue
+    return False
 
 
 def gen_password(length, classes, max_attempts=10000):
@@ -91,10 +117,13 @@ def main():
     p.add_argument("--capitalize", action="store_true", help="passphrase mode: capitalize each word")
     p.add_argument("--add-number", action="store_true", help="passphrase mode: append a random digit")
     p.add_argument("--wordlist", default=str(DEFAULT_WORDLIST))
+    p.add_argument("--clipboard", action="store_true", help="copy the value to the OS clipboard instead of printing it")
     args = p.parse_args()
 
     if args.count < 1:
         sys.exit("--count must be >= 1")
+    if args.clipboard and args.count != 1:
+        sys.exit("--clipboard only makes sense with --count 1 (it can hold one value); drop --clipboard or set --count 1.")
 
     results = []
     if args.mode == "password":
@@ -114,6 +143,17 @@ def main():
         for _ in range(args.count):
             phrase, bits = gen_passphrase(args.words, wordlist, args.separator, args.capitalize, args.add_number)
             results.append({"value": phrase, "entropy_bits": round(bits, 1)})
+
+    if args.clipboard:
+        if copy_to_clipboard(results[0]["value"]):
+            results[0]["value"] = "(copied to clipboard -- not printed)"
+            results[0]["clipboard"] = True
+        else:
+            results[0]["clipboard"] = False
+            print(
+                "Clipboard copy failed (no clip/pbcopy/xclip/wl-copy/xsel found) -- printing value instead.",
+                file=sys.stderr,
+            )
 
     print(json.dumps(results, indent=2))
 

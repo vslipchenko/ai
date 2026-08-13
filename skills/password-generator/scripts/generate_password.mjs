@@ -12,6 +12,7 @@ import { randomInt } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const LOWER = "abcdefghijklmnopqrstuvwxyz";
 const UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -31,6 +32,27 @@ function choice(str) {
   return str[randomInt(0, str.length)];
 }
 
+// Tries platform clipboard tools in order; returns true on the first that
+// accepts the text. All our generated values are pure ASCII, so no
+// encoding/codepage concerns across clip/pbcopy/xclip/wl-copy/xsel.
+function copyToClipboard(text) {
+  const candidates =
+    process.platform === "win32"
+      ? [["clip", []]]
+      : process.platform === "darwin"
+        ? [["pbcopy", []]]
+        : [
+            ["xclip", ["-selection", "clipboard"]],
+            ["wl-copy", []],
+            ["xsel", ["--clipboard", "--input"]],
+          ];
+  for (const [cmd, cmdArgs] of candidates) {
+    const result = spawnSync(cmd, cmdArgs, { input: text, encoding: "utf-8" });
+    if (!result.error && result.status === 0) return true;
+  }
+  return false;
+}
+
 function parseArgs(argv) {
   const args = {
     mode: "password",
@@ -46,6 +68,7 @@ function parseArgs(argv) {
     capitalize: false,
     addNumber: false,
     wordlist: DEFAULT_WORDLIST,
+    clipboard: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -64,6 +87,7 @@ function parseArgs(argv) {
       case "--capitalize": args.capitalize = true; break;
       case "--add-number": args.addNumber = true; break;
       case "--wordlist": args.wordlist = next(); break;
+      case "--clipboard": args.clipboard = true; break;
       default: fail(`Unknown argument: ${a}`);
     }
   }
@@ -124,6 +148,9 @@ function genPassphrase(wordCount, wordlist, separator, capitalize, addNumber) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.count < 1) fail("--count must be >= 1");
+  if (args.clipboard && args.count !== 1) {
+    fail("--clipboard only makes sense with --count 1 (it can hold one value); drop --clipboard or set --count 1.");
+  }
 
   const results = [];
   if (args.mode === "password") {
@@ -145,6 +172,17 @@ function main() {
     }
   } else {
     fail(`Unknown --mode: ${args.mode}`);
+  }
+
+  if (args.clipboard) {
+    const copied = copyToClipboard(results[0].value);
+    if (copied) {
+      results[0].value = "(copied to clipboard -- not printed)";
+      results[0].clipboard = true;
+    } else {
+      results[0].clipboard = false;
+      console.error("Clipboard copy failed (no clip/pbcopy/xclip/wl-copy/xsel found) -- printing value instead.");
+    }
   }
 
   console.log(JSON.stringify(results, null, 2));

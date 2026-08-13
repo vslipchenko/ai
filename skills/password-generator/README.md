@@ -35,20 +35,47 @@ Restart Claude Code (or reload skills) afterwards.
 > **You:** Generate a strong password for a new admin account, no symbols
 > allowed, 16 characters.
 >
+> **Claude:** Generated and copied to your clipboard (not shown here) — 16
+> characters, letters + digits, ~85 bits of entropy. Paste it into your
+> password manager now.
+
+> **You:** Actually just show me this one, I need to type it into a form
+> that won't take a paste.
+>
 > **Claude:**
 > ```
 > Qx7bNfmZ4hRkT2Lp
 > ```
-> ~85 bits of entropy (16 chars, letters + digits).
 
-> **You:** I'd rather have something memorable — make it a passphrase
-> instead.
+> **You:** And give me a memorable one too — a passphrase, and I do want to
+> see it.
 >
 > **Claude:**
 > ```
 > Wobble-Kitchen-Doctrine-Amethyst-Culture-Rerun
 > ```
 > ~77 bits of entropy (6 words from a 7,776-word list).
+
+## Keeping it out of your terminal history
+
+By default, when generating a single value, the skill copies it straight to
+your OS clipboard (`clip` / `pbcopy` / `xclip` / `wl-copy` / `xsel`,
+depending on platform) instead of printing it — so it never lands in your
+terminal scrollback or the chat transcript in the first place. You'll see
+something like:
+
+> Generated and copied to your clipboard (not shown here) — 20 characters,
+> ~130 bits of entropy.
+
+Ask to "just show it" (or generate more than one at once) to get the
+plaintext printed instead.
+
+If it does get printed and you want it out of your terminal, clear your
+shell's scrollback (`clear` / `cls` / `Clear-Host`) — **`/clear` is a
+different thing**: it only resets Claude's own conversation context, it
+does not touch terminal scrollback and can't be triggered on your behalf,
+so it's a secondary step at best, not a substitute for not printing the
+secret in the first place.
 
 ## How it works
 

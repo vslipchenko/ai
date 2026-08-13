@@ -1,4 +1,5 @@
 import math
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -6,6 +7,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import generate_password as gp
+
+SCRIPT = Path(__file__).resolve().parent.parent / "generate_password.py"
 
 
 class BuildCharsetTest(unittest.TestCase):
@@ -89,6 +92,18 @@ class WordlistFileTest(unittest.TestCase):
         words = gp.load_wordlist(gp.DEFAULT_WORDLIST)
         self.assertEqual(len(words), 7776)
         self.assertEqual(len(set(words)), len(words))
+
+
+class ClipboardCliTest(unittest.TestCase):
+    def test_clipboard_with_count_gt_1_is_rejected(self):
+        # --clipboard's happy path writes to the real OS clipboard, which
+        # would clobber whatever the developer running this suite has
+        # copied -- that side effect is exercised manually, not here.
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--mode", "password", "--count", "3", "--clipboard"],
+            capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

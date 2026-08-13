@@ -67,3 +67,11 @@ test("passphrase: entropy scales linearly with word count", () => {
   // Each side is independently rounded to 1 decimal, so allow for that.
   assert.ok(Math.abs(bits6 - 2 * bits3) < 0.15);
 });
+
+test("--clipboard with --count > 1 is rejected (clipboard holds one value)", () => {
+  assert.throws(() => run(["--mode", "password", "--count", "3", "--clipboard"]));
+});
+
+// --clipboard's happy path actually writes to the real OS clipboard, which
+// would clobber whatever the developer running this suite has copied. That
+// side effect is exercised manually (see PR/skill notes) rather than here.
