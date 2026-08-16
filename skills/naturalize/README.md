@@ -33,8 +33,13 @@ through a short setup instead of guessing at your voice:
 1. Pick your default register — informal or formal (informal is the
    suggested default).
 2. Give a real informal sample (a Slack message, a text) and a real formal
-   sample (an email, a doc excerpt). No samples handy? You'll be asked to
-   write a few sentences spanning past/present/future tense instead.
+   sample (an email, a doc excerpt). No samples handy for one? You can
+   either write a few substitute sentences spanning past/present/future
+   tense, or skip it entirely — in which case that register runs in
+   **generic mode**: you still get the AI-tell checklist applied (em-dash,
+   stock phrases, rare synonyms, ...), just without matching to your
+   specific voice, since nothing was learned about it. Every rewrite in
+   generic mode says so, and you can add a sample later to personalize it.
 3. Toggle a checklist of AI writing tells — vocabulary, symbols, sentence
    structure, stock openers/closers, formatting, hedging, and an optional
    (off by default) light-typo mode for informal writing.
@@ -57,6 +62,16 @@ language before anything is saved.
 >
 > **Claude:** Done — typos are off in your profile.
 
+> **You:** *(during calibration, formal register)* I don't have a formal
+> sample and don't feel like writing one.
+>
+> **Claude:** No problem — I'll run your formal register in generic mode:
+> the AI-tell checklist still applies, but I won't be matching it to your
+> specific voice since I have nothing to learn it from. You can add a
+> sample any time to personalize it. *(later, on a formal rewrite)*
+> "Attached is the report." *(generic de-AI-ify pass — no voice sample on
+> file for this register; add one anytime to personalize.)*
+
 ## How it works
 
 1. **A profile is loaded** from `~/.naturalize/profile.md` (your home
@@ -69,7 +84,9 @@ language before anything is saved.
    over rare synonyms, ASCII-typeable symbols over Unicode lookalikes
    (em-dash → hyphen, `→` → `->`, curly quotes → straight quotes, ...),
    stock AI phrasing and structure stripped per your toggles, optional
-   light typos in informal writing only.
+   light typos in informal writing only. If the resolved register has no
+   sample on file (generic mode), only this checklist layer runs — no
+   attempt is made to match your personal voice, and the delivery says so.
 4. **Protected content is never touched** — code, quotations/citations,
    URLs, numbers, proper nouns, and your field's actual jargon are left
    exactly as they are, regardless of which toggles are on.

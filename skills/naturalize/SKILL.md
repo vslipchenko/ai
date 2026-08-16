@@ -42,9 +42,21 @@ Step 4 whenever a request's register can't be resolved any other way.
 
 **2b. Phase 1 — writing samples.** Ask for a real informal sample (e.g. a
 Slack message or text) and a real formal sample (e.g. an email or doc
-excerpt). For whichever one the user can't supply, ask them instead to
-write a few sentences that span past, present, and future tense — enough
-to observe sentence structure and habits even without a real artifact.
+excerpt). For whichever one the user can't supply, offer two options:
+
+- **Write a substitute** — a few sentences spanning past, present, and
+  future tense, enough to observe structure and habits without a real
+  artifact. That register still gets personalized.
+- **Skip it.** If they skip, say plainly what that means before moving
+  on: that register will run in **generic mode** — the Phase 2 checklist
+  (de-AI-ifying rules) still applies, but output won't be tailored to
+  their specific voice, since nothing was learned about it. It'll read
+  like a general humanizer pass for that register, not "sounds like you."
+  They can add a sample later (Step 3) to personalize it whenever they
+  want.
+
+Track each register's resulting mode — `personalized` or `generic` — for
+Step 2g.
 
 **2c. Phase 2 — togglable checklist.** Present `references/checklist.md`'s
 groups via `AskUserQuestion` (multiSelect per group): symbols, vocabulary,
@@ -62,10 +74,14 @@ without changing the saved profile.
 shown each time text is naturalized, or just the rewritten result.
 Store as `Preview: enabled`.
 
-**2f. Synthesize and confirm.** Turn each register's sample into a short
-characteristic summary — sentence rhythm, formality markers, greeting/
-sign-off style, contraction/emoji use — and show the whole assembled
-profile back to the user in plain language (not the raw file format). Let
+**2f. Synthesize and confirm.** For each `personalized` register, turn its
+sample into a short characteristic summary — sentence rhythm, formality
+markers, greeting/sign-off style, contraction/emoji use. Skip synthesis
+for any `generic` register — there's nothing to summarize. Show the whole
+assembled profile back to the user in plain language (not the raw file
+format), and if either register ended up `generic`, restate that plainly
+in the summary — e.g. "your formal writing will use general de-AI-ifying
+rules only, not a voice matched to you, since no sample was given." Let
 them correct anything before saving.
 
 **2g. Save.** Write the confirmed profile to `~/.naturalize/profile.md`
@@ -77,6 +93,7 @@ Handle these without re-running all of Step 2:
 
 - **Add/replace a sample** for one register → re-run just 2f's synthesis
   for that register, leave the other register and all rules untouched.
+  Adding a sample to a `generic` register switches it to `personalized`.
 - **Toggle one rule** ("turn off typos," "stop flagging passive voice") →
   flip that single entry in the Rules section.
 - **Edit custom instructions** → replace or append to that field.
@@ -111,6 +128,12 @@ Rewrite the input text using the loaded profile:
 - Custom instructions: apply as stated, plus any one-off instruction given
   for this specific request.
 
+If the resolved register's mode is `generic`, apply only the toggle-driven
+Phase 2 rules above — don't attempt to match tone, rhythm, or greeting
+style, since no characteristics were synthesized for it. This is the
+"no personalization layer" path: functionally a general de-AI-ifier/
+humanizer pass rather than a voice match.
+
 **Never touch protected content** — code blocks, quoted/cited text, URLs,
 numbers, proper nouns, domain terminology — regardless of which toggles
 are on.
@@ -125,6 +148,13 @@ kind of artificial pattern. Allow rare, natural-looking exceptions.
   changed) and let the user confirm or ask for adjustments before treating
   it as final.
 - **Preview disabled** → output the rewritten text directly.
+
+If the resolved register is running in `generic` mode, add one brief
+trailing note to the delivery — e.g. "(generic de-AI-ify pass — no voice
+sample on file for this register; add one anytime to personalize.)" — so
+the user isn't left assuming this was matched to their own voice when it
+wasn't. Keep it to one line; don't repeat the full explanation from
+calibration.
 
 ## Error handling
 

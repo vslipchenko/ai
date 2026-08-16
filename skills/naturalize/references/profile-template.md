@@ -11,18 +11,23 @@ the user can open and hand-edit it directly if they want.
 default_voice: informal   # informal | formal
 
 ## Informal register
+mode: personalized   # personalized | generic
 sample: |
   <raw user sample, verbatim, or the past/present/future-tense sentences
-  the user wrote during calibration if they had no real sample>
+  the user wrote during calibration if they had no real sample; empty if
+  mode: generic>
 characteristics: <synthesized summary — sentence rhythm, formality
   markers, greeting/sign-off style, contraction/emoji use, anything else
-  observed>
+  observed; empty if mode: generic>
 
 ## Formal register
+mode: personalized   # personalized | generic
 sample: |
   <raw user sample, verbatim, or the past/present/future-tense sentences
-  the user wrote during calibration if they had no real sample>
-characteristics: <synthesized summary, same shape as above>
+  the user wrote during calibration if they had no real sample; empty if
+  mode: generic>
+characteristics: <synthesized summary, same shape as above; empty if
+  mode: generic>
 
 ## Rules
 symbols_ascii_only: on
@@ -54,13 +59,19 @@ empty>
 
 Notes for whichever step reads/writes this file:
 
-- If a register's `sample` was never provided and the user declined to
-  write substitute sentences, leave `sample` and `characteristics` empty
-  and fall back to the *other* register's characteristics plus the
-  general Rules section when that register is needed — don't block on it.
+- `mode: generic` means the user explicitly declined to provide a sample
+  or substitute sentences for that register (SKILL.md Step 2b). Leave
+  `sample` and `characteristics` empty in that case — don't fall back to
+  the other register's characteristics, since that would silently apply a
+  voice the user never confirmed for this register. A `generic` register
+  is rewritten using only the Phase 2 checklist rules (Step 5), and every
+  delivery for it carries a brief one-line disclosure (Step 6) so the user
+  knows it wasn't personalized.
 - Partial recalibration (SKILL.md Step 3) rewrites only the touched
-  field(s) — one register's sample+characteristics, one Rules entry, or
-  Custom instructions — and leaves everything else in the file untouched.
+  field(s) — one register's sample+characteristics+mode, one Rules entry,
+  or Custom instructions — and leaves everything else in the file
+  untouched. Adding a sample to a `generic` register flips its `mode` to
+  `personalized`.
 - If the file exists but doesn't parse as this structure, treat it as
   corrupted per SKILL.md's error handling: say so and offer to
   recalibrate rather than guessing at a partial read.
