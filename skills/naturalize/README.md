@@ -50,6 +50,17 @@ through a short setup instead of guessing at your voice:
 Your answers are synthesized into a profile and shown back to you in plain
 language before anything is saved.
 
+## Bypassing your profile for one request
+
+By default every rewrite uses your saved profile. If you'd rather get a
+plain de-AI-ify pass without your voice applied — say for text you want
+scrubbed of AI tells but not made to sound like *you* specifically — just
+ask: "naturalize this generically," "without my profile," "ignore my
+profile for this one." That request skips your profile file entirely (it's
+not even read), uses the checklist's stated defaults, and the reply says
+plainly that it ran generically. It's a one-off — your saved profile is
+untouched, and the next normal request goes back to using it.
+
 ## Example
 
 > **You:** Naturalize this: "I'd be happy to help! Please let me know if
@@ -72,25 +83,39 @@ language before anything is saved.
 > "Attached is the report." *(generic de-AI-ify pass — no voice sample on
 > file for this register; add one anytime to personalize.)*
 
+> **You:** Naturalize this generically, don't use my profile: "I would be
+> delighted to assist you with this endeavor."
+>
+> **Claude:** "Happy to help with this." *(generic pass, per your request
+> — your profile wasn't consulted.)*
+
 ## How it works
 
-1. **A profile is loaded** from `~/.naturalize/profile.md` (your home
-   directory, not this repo) if one exists; otherwise calibration runs
-   first.
-2. **Register is resolved** for each request — explicit ("as an email")
+1. **Request mode is determined first.** Normally that's `profile` mode —
+   your saved profile governs the rewrite. Asking for a generic pass
+   switches to a one-off `explicit_generic` mode for that request only:
+   your profile file isn't read (or written) at all, and the checklist's
+   stated defaults are used instead.
+2. **A profile is loaded** from `~/.naturalize/profile.md` (your home
+   directory, not this repo) if one exists and `profile` mode is active;
+   otherwise calibration runs first.
+3. **Register is resolved** for each request — explicit ("as an email")
    wins, then it's inferred from context, then it falls back to your
-   default voice.
-3. **The text is rewritten** against the profile's rules: common words
-   over rare synonyms, ASCII-typeable symbols over Unicode lookalikes
-   (em-dash → hyphen, `→` → `->`, curly quotes → straight quotes, ...),
-   stock AI phrasing and structure stripped per your toggles, optional
-   light typos in informal writing only. If the resolved register has no
-   sample on file (generic mode), only this checklist layer runs — no
-   attempt is made to match your personal voice, and the delivery says so.
-4. **Protected content is never touched** — code, quotations/citations,
+   default voice (or, in `explicit_generic` mode, to informal, since
+   there's no profile default to fall back to).
+4. **The text is rewritten** using the effective rules for that mode:
+   common words over rare synonyms, ASCII-typeable symbols over Unicode
+   lookalikes (em-dash → hyphen, `→` → `->`, curly quotes → straight
+   quotes, ...), stock AI phrasing and structure stripped per the active
+   toggles, optional light typos in informal writing only. `profile` mode
+   uses your saved toggles/custom instructions; `explicit_generic` mode
+   (and any register with no sample on file) uses the checklist's stated
+   defaults instead — no attempt is made to match your personal voice, and
+   the delivery says so.
+5. **Protected content is never touched** — code, quotations/citations,
    URLs, numbers, proper nouns, and your field's actual jargon are left
    exactly as they are, regardless of which toggles are on.
-5. **You can recalibrate at any time**, in full or partially — add a
+6. **You can recalibrate at any time**, in full or partially — add a
    sample, flip one toggle, edit your custom instructions — without
    redoing the whole setup.
 
