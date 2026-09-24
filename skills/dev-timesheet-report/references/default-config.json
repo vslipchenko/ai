@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "identity": {
+    "git_authors": [],
+    "jira_account_id": null,
+    "github_login": null,
+    "gitlab_username": null,
+    "bitbucket_uuid": null
+  },
+  "board": {
+    "type": "jira",
+    "enabled": true,
+    "access": "auto",
+    "base_url": null,
+    "email_env": "JIRA_EMAIL",
+    "token_env": "JIRA_API_TOKEN",
+    "projects": [],
+    "fetch": {
+      "transitions": true,
+      "comments": true
+    }
+  },
+  "wiki": {
+    "type": "confluence",
+    "enabled": false,
+    "access": "auto",
+    "base_url": null,
+    "email_env": "JIRA_EMAIL",
+    "token_env": "JIRA_API_TOKEN",
+    "spaces": [],
+    "fetch": {
+      "pages": true,
+      "comments": true
+    }
+  },
+  "local_repos": [],
+  "code_hosts": [],
+  "default_activity": "Other",
+  "activity_labels": [
+    "Coding",
+    "Code Review",
+    "Investigation",
+    "Testing",
+    "Documentation",
+    "Other"
+  ],
+  "activity_rules": [
+    { "drop": true, "when": { "type": "jira_assigned" } },
+    { "drop": true, "when": { "type": "jira_transition", "status_to": ["Done", "Closed", "Resolved", "Cancelled", "Won't Do"] } },
+    { "label": "Code Review", "when": { "type": ["pr_review", "pr_comment", "pr_approved"] } },
+    { "label": "Testing", "when": { "type": "jira_transition", "status_to": ["In Testing", "QA", "Ready for QA"] } },
+    { "label": "Documentation", "when": { "type": ["confluence_created", "confluence_updated", "confluence_comment"] } },
+    { "label": "Investigation", "when": { "type": ["jira_comment", "jira_created"] } },
+    { "label": "Coding", "when": { "type": ["commit", "branch_created", "pr_opened", "pr_updated", "pr_merged", "jira_transition"] } }
+  ],
+  "range": {
+    "default": "last-7-days",
+    "week_starts_on": "monday"
+  },
+  "output": {
+    "format": "terminal",
+    "table_style": "grid",
+    "include_time": false,
+    "columns": ["date", "day", "item_type", "id", "title", "activity"],
+    "csv_path": null,
+    "title_width": 60,
+    "show_summary": true,
+    "show_weekday": true,
+    "show_header": true,
+    "untracked": "include",
+    "untracked_placeholder": "(no ticket)",
+    "missing_title_placeholder": "(title unavailable)"
+  }
+}
