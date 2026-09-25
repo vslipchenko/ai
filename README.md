@@ -27,6 +27,7 @@ Standalone skills (not tied to a specific plugin) live in `skills/`.
 
 | Skill | Description |
 |---|---|
+| [`akinator`](skills/akinator) | An Akinator-style guessing game in both directions: you think of a character, animal or object and Claude asks yes/no questions, or Claude picks one and you ask. Claude's pick is fixed at the start with a salted hash you can verify at the end. Keeps a best/worst leaderboard for each mode and question limit. |
 | [`dev-timesheet-report`](skills/dev-timesheet-report) | Build a developer timesheet for any date range from real activity — local git repos, a Jira board, Confluence, and GitHub/GitLab/Bitbucket — as a boxed terminal table or CSV, each line showing date, system, id, title and activity label. Configured once, overridable per run. |
 | [`filter-translator`](skills/filter-translator) | Convert a plain-text filter description into a syntactically correct expression in OData `$filter`, JQL, MongoDB, SQL `WHERE`, or RQL — confirming the resolved logical expression with you before producing the final syntax. |
 | [`naturalize`](skills/naturalize) | Rewrite Claude-generated text to match your own writing voice — calibrated once via samples and a togglable checklist of AI writing tells (em-dashes, stock phrases, rare synonyms, ...), then reused automatically. |
