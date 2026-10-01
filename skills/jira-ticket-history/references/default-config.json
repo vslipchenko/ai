@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "site": "",
+  "deployment": "auto",
+  "access": "auto",
+  "auth": {
+    "email_env": "JIRA_EMAIL",
+    "token_env": "JIRA_API_TOKEN"
+  },
+  "history": {
+    "types": ["status", "assignee", "description", "title", "fields", "comments", "links", "weblinks", "attachments", "worklogs"],
+    "exclude_fields": []
+  },
+  "automation_accounts": [],
+  "output": {
+    "dir": ".",
+    "open": true,
+    "order": "desc",
+    "hide_automation": false,
+    "timezone": "local"
+  }
+}

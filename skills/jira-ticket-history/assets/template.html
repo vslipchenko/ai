@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: ticket header + git shortlog, a sticky filter bar, then one expandable git-log list.
+   This file is fixed: build_history injects the data, so every run renders the same design. */
+:root {
+  --bg: #f4f6f9; --surface: #ffffff; --sunken: #eef1f5; --fg: #1a1f28; --muted: #5d6675; --line: #dce1e8;
+  --accent: #2c59cc; --hash: #9a5d00; --branch: #1f7a3a;
+  --add-fg: #17692f; --add-bg: #e7f5eb; --add-hl: #b6e3c3; --del-fg: #b3261e; --del-bg: #fdeeee; --del-hl: #f5c3c0;
+  --ok: #1f7a3a; --warn: #9a5d00; --warn-bg: #fff6e0;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --r: 8px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1116; --surface: #151a21; --sunken: #1b2029; --fg: #e2e6ed; --muted: #97a0ae; --line: #272e39;
+  --accent: #82a6ff; --hash: #e2b35a; --branch: #6fd68d;
+  --add-fg: #72dd92; --add-bg: #11291a; --add-hl: #1e5632; --del-fg: #ff8f86; --del-bg: #331416; --del-hl: #6a2428;
+  --ok: #6fd68d; --warn: #e2b35a; --warn-bg: #2b2210;
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0e1116; --surface: #151a21; --sunken: #1b2029; --fg: #e2e6ed; --muted: #97a0ae; --line: #272e39;
+  --accent: #82a6ff; --hash: #e2b35a; --branch: #6fd68d;
+  --add-fg: #72dd92; --add-bg: #11291a; --add-hl: #1e5632; --del-fg: #ff8f86; --del-bg: #331416; --del-hl: #6a2428;
+  --ok: #6fd68d; --warn: #e2b35a; --warn-bg: #2b2210;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--sans); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+[hidden] { display: none !important; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 16px; }
+.mono { font-family: var(--mono); }
+.num { font-variant-numeric: tabular-nums; }
+
+.alert { background: var(--warn-bg); border-bottom: 1px solid var(--line); color: var(--fg); font-size: 13.5px; }
+.alert .wrap { padding-block: 10px; display: grid; gap: 2px; }
+.alert b { color: var(--warn); }
+
+header.ticket { padding-block: 28px 20px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; }
+.cmd { font: 500 13px var(--mono); color: var(--muted); margin: 0 0 10px; }
+.cmd .p { color: var(--branch); }
+h1 { font-size: clamp(21px, 2.6vw, 28px); line-height: 1.25; font-weight: 650; margin: 0 0 14px; text-wrap: balance; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+h1 a { color: inherit; }
+.key { font: 600 0.8em var(--mono); color: var(--hash); margin-right: 8px; white-space: nowrap; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.pill { font-size: 12.5px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+.pill.status { border-color: var(--branch); color: var(--branch); font-weight: 600; }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 14px; font-size: 13.5px; margin: 0; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; }
+.panel h2 { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; display: flex; justify-content: space-between; gap: 8px; }
+.panel h2 code { font: 500 11px var(--mono); text-transform: none; letter-spacing: 0; }
+.shortlog { list-style: none; margin: 0; padding: 0; font: 13px var(--mono); display: grid; gap: 2px; }
+.shortlog li { display: grid; grid-template-columns: 3ch minmax(0, 1fr); gap: 10px; }
+.shortlog .n { text-align: right; color: var(--hash); }
+.shortlog .bot { color: var(--muted); }
+.shortlog .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.small { font-size: 13px; display: grid; gap: 3px; }
+.small .fail { color: var(--del-fg); }
+.okmark { color: var(--ok); font-weight: 700; }
+.badmark { color: var(--warn); font-weight: 700; }
+
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-block: 1px solid var(--line); }
+.bar .wrap { padding-block: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 13px; }
+.types { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; min-width: 0; flex: 1 1 520px; }
+.types label, .opts label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+.types label.all { font-weight: 600; padding-right: 10px; border-right: 1px solid var(--line); }
+.types label.off { color: var(--muted); cursor: not-allowed; }
+.count { color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 400; }
+.opts { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.opts select, .opts button { font: inherit; font-size: 13px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+
+main { padding-block: 18px 60px; }
+.empty { padding: 40px 0; color: var(--muted); text-align: center; }
+.viewnote { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
+.viewnote b { color: var(--warn); font-weight: 600; }
+
+.h { font-family: var(--mono); color: var(--hash); }
+.deco { font-family: var(--mono); font-size: 0.92em; white-space: nowrap; }
+.deco .br { color: var(--branch); font-weight: 600; }
+.botmark { font: 600 10px var(--sans); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: 1px; }
+.tag { font: 500 11.5px var(--sans); color: var(--muted); background: var(--sunken); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+
+.log { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.row { border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; }
+.row > button { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: grid; grid-template-columns: 14px 9ch 11.5ch 15ch minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 7px 14px; font-size: 14px; }
+.row > button:hover { background: var(--sunken); }
+.row > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.caret { color: var(--muted); font-size: 11px; transition: transform .15s; display: inline-block; }
+.row.open .caret { transform: rotate(90deg); }
+.row .h { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .date { font: 13px var(--mono); color: var(--muted); white-space: nowrap; }
+.row .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.row .subj { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row.botrow .subj { color: var(--muted); }
+.detail { padding: 4px 14px 16px 40px; display: grid; gap: 10px; min-width: 0; }
+.meta { font: 12.5px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.changes { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 14px; font-size: 13.5px; margin: 0; }
+.changes dt { color: var(--muted); }
+.changes dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.changes .from { color: var(--del-fg); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--del-fg) 50%, transparent); }
+.changes .to { color: var(--add-fg); }
+.changes .none { color: var(--muted); font-style: italic; }
+.changes .arrow { color: var(--muted); margin-inline: 6px; }
+.note { font-size: 13px; color: var(--muted); border-left: 3px solid var(--line); padding-left: 10px; margin: 0; }
+
+.diff { font: 12.5px/1.55 var(--mono); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; min-width: 0; }
+.dh { background: var(--sunken); color: var(--muted); padding: 4px 6px 4px 10px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; font: 500 12px var(--sans); }
+.seg button { font: inherit; border: 0; background: var(--surface); color: var(--muted); padding: 2px 10px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.dl { display: grid; grid-template-columns: 2ch minmax(0, 1fr); padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dl.add { background: var(--add-bg); color: var(--add-fg); }
+.dl.del { background: var(--del-bg); color: var(--del-fg); }
+.dl.ctx { color: var(--muted); }
+.dl.skip { color: var(--muted); background: var(--sunken); font-style: italic; }
+.dl.add mark, .rich mark.add { background: var(--add-hl); color: inherit; border-radius: 2px; }
+.dl.del mark { background: var(--del-hl); color: inherit; border-radius: 2px; }
+
+/* Rendered Jira text. Every block sits on the same 3px gutter, so marked and unmarked text line up. */
+.rich { font: 14px/1.6 var(--sans); padding: 12px 16px 14px 10px; max-width: 90ch; overflow-wrap: anywhere; min-width: 0; }
+.rich > * { margin: 0 0 8px; }
+.rich > *:last-child { margin-bottom: 0; }
+.rich p, .rich h1, .rich h2, .rich h3, .rich h4, .rich h5, .rich h6, .rich li, .rich pre, .rich blockquote { border-left: 3px solid transparent; padding: 3px 10px; border-radius: 0 4px 4px 0; }
+.rich h1, .rich h2, .rich h3, .rich h4, .rich h5, .rich h6 { font-size: 16px; line-height: 1.3; margin-top: 14px; }
+.rich > :first-child { margin-top: 0; }
+/* markers sit outside the item, in the gutter, so they share a line with the text */
+.rich ul, .rich ol { padding-left: 26px; list-style-position: outside; }
+.rich ul ul, .rich ol ol, .rich ul ol, .rich ol ul { padding-left: 22px; margin: 2px 0 0; }
+.rich li { padding-left: 6px; }
+.rich li + li { margin-top: 2px; }
+/* Jira's HTML wraps list, table and quote content in <p>; those are not separate blocks */
+.rich li > p, .rich td > p, .rich th > p, .rich blockquote > p { margin: 0; padding: 0; border: 0; background: none; }
+.rich li > p + p, .rich td > p + p, .rich blockquote > p + p { margin-top: 4px; }
+.rich blockquote { color: var(--muted); border-left-color: var(--line); }
+.rich hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0 12px 13px; }
+.rich code { font: 12.5px var(--mono); background: var(--sunken); padding: 1px 4px; border-radius: 4px; }
+.rich pre { font: 12.5px/1.5 var(--mono); background: var(--sunken); white-space: pre-wrap; overflow-x: auto; }
+.rich pre code { background: none; padding: 0; }
+.rich .tbl { overflow-x: auto; margin-left: 13px; }
+.rich table { border-collapse: collapse; font-size: 13px; }
+.rich th, .rich td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; vertical-align: top; }
+.rich .chg { border-left-color: var(--add-fg); background: var(--add-bg); }
+.rich tr.chg td, .rich tr.chg th { background: var(--add-bg); }
+.rich mark.add { padding: 0 2px; }
+.rich .ph { color: var(--muted); font-style: italic; }
+.legendline { font: 12px var(--sans); color: var(--muted); padding: 8px 16px 0 13px; display: flex; align-items: center; gap: 6px; }
+.legendline i { width: 3px; height: 12px; background: var(--add-fg); display: inline-block; border-radius: 2px; }
+.body { background: var(--sunken); border-radius: 6px; max-width: 90ch; }
+.body.rich { padding: 10px 14px 10px 6px; }
+.body.rich code, .body.rich pre { background: var(--surface); }
+
+@media (max-width: 860px) { header.ticket { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 620px) {
+  .row > button { grid-template-columns: 14px 9ch minmax(0, 1fr) auto; }
+  .row > button .who, .row > button .date { display: none; }
+  .detail { padding-left: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .caret { transition: none; } }
+</style>
+</head>
+<body>
+<div class="alert" id="alert" hidden></div>
+<div class="wrap"><header class="ticket" id="hdr"></header></div>
+
+<div class="bar"><div class="wrap">
+  <div class="types" id="types" role="group" aria-label="Activity types"></div>
+  <div class="opts">
+    <label><input type="checkbox" id="f-bots">Hide automation</label>
+    <select id="f-order" aria-label="Order"><option value="desc">Newest first</option><option value="asc">Oldest first</option></select>
+    <button type="button" id="f-expand">Expand all</button><button type="button" id="f-collapse">Collapse all</button>
+  </div>
+</div></div>
+
+<main class="wrap" id="log" aria-live="polite"></main>
+
+<script>
+const DATA = /*__DATA__*/null;
+const T = DATA.ticket;
+const SITE = DATA.site || '';
+// Each type maps 1:1 to a changelog field or to the API an entry came from.
+const TYPES = [
+  { id: 'status', label: 'Status' }, { id: 'assignee', label: 'Assignee' },
+  { id: 'description', label: 'Description' }, { id: 'title', label: 'Title' },
+  { id: 'fields', label: 'Other fields' }, { id: 'comments', label: 'Comments' },
+  { id: 'links', label: 'Issue links' }, { id: 'weblinks', label: 'Web links' },
+  { id: 'attachments', label: 'Attachments' }, { id: 'worklogs', label: 'Worklogs' },
+];
+const TYPE_LABEL = Object.fromEntries(TYPES.map(t => [t.id, t.label]));
+const state = {
+  types: Object.fromEntries(TYPES.map(t => [t.id, DATA.defaults.types.includes(t.id)])),
+  hideBots: DATA.defaults.hide_automation,
+  order: DATA.defaults.order,
+  open: new Set(),
+  mode: {},
+};
+
+// ---------- text helpers ----------
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function safeHref(u) {
+  u = String(u || '').trim();
+  if (/^(https?:|mailto:)/i.test(u)) return u;
+  if (u.startsWith('/') && !u.startsWith('//') && SITE) return SITE + u;
+  return null;
+}
+const anchor = (href, text) => { const h = safeHref(href); return h ? `<a href="${esc(h)}" target="_blank" rel="noopener">${text}</a>` : text; };
+const KEY_RE = /(^|[^\w/\-"=])([A-Z][A-Z0-9_]+-\d+)\b/g;
+// Links bare URLs and issue keys inside already-escaped text (never inside tags).
+function autolink(html) {
+  return html.split(/(<[^>]*>)/).map((part, i, arr) => {
+    if (i % 2) return part;
+    const inA = arr.slice(0, i).filter((x, j) => j % 2).reduce((d, tag) => d + (/^<a\b/i.test(tag) ? 1 : /^<\/a>/i.test(tag) ? -1 : 0), 0) > 0;
+    if (inA) return part;
+    return part
+      .replace(/(^|[\s(])(https?:\/\/[^\s<)"']+)/g, (m, p, u) => p + anchor(u.replace(/&amp;/g, '&'), u))
+      .replace(KEY_RE, (m, p, k) => SITE ? `${p}<a href="${esc(SITE)}/browse/${k}" target="_blank" rel="noopener">${k}</a>` : m);
+  }).join('');
+}
+
+// ---------- Jira wiki markup -> HTML ----------
+const MO = '\u0001', MC = '\u0002';            // word-change markers from the diff
+const PH = (i) => `\u0003${i}\u0003`;           // placeholders for escaped / generated fragments
+function inline(src) {
+  const keep = [];
+  const hold = html => { keep.push(html); return PH(keep.length - 1); };
+  let s = String(src);
+  s = s.replace(/\\(.)/g, (m, c) => hold(esc(c)));                                        // \X = literal X
+  s = s.replace(/\{\{([\s\S]+?)\}\}/g, (m, c) => hold(`<code>${esc(c)}</code>`));
+  s = s.replace(/\{color(?::[^}]*)?\}/g, '').replace(/\{anchor(?::[^}]*)?\}/g, '');
+  s = s.replace(/!([^!\s][^!\n]*?)!/g, (m, f) => hold(`<span class="ph">[image: ${esc(f.split('|')[0])}]</span>`));
+  s = s.replace(/\[~accountid:[^\]]+\]/g, '@user').replace(/\[~([^\]]+)\]/g, '@$1');
+  s = s.replace(/\[([^\]|\n]+)\|([^\]\n]+)\]/g, (m, t, u) => hold(anchor(u.replace(/[\u0001\u0002]/g, ''), esc(t))));
+  s = s.replace(/\[([A-Z][A-Z0-9_]+-\d+)\]/g, (m, k) => hold(SITE ? `<a href="${esc(SITE)}/browse/${k}" target="_blank" rel="noopener">${k}</a>` : k));
+  s = s.replace(/\[((?:https?:|mailto:)[^\]\n]+)\]/g, (m, u) => hold(anchor(u, esc(u))));
+  let h = esc(s);
+  const B = '(^|[\\s(\\u0001>\\u0003\\[])', A = '(?=$|[\\s).,:;!?\\u0002<\\u0003\\]])';
+  const wrap = (ch, tag) => { h = h.replace(new RegExp(`${B}\\${ch}(?=\\S)([^\\${ch}\\n]+?)\\${ch}${A}`, 'g'), `$1<${tag}>$2</${tag}>`); };
+  wrap('*', 'strong'); wrap('_', 'em'); wrap('-', 'del'); wrap('+', 'ins'); wrap('^', 'sup'); wrap('~', 'sub');
+  h = h.replace(/\?\?(.+?)\?\?/g, '<cite>$1</cite>');
+  h = autolink(h);
+  h = h.replace(/\u0003(\d+)\u0003/g, (m, i) => keep[+i]);
+  return h.replace(/\u0001/g, '<mark class="add">').replace(/\u0002/g, '</mark>');
+}
+// lines: [{ t, w?, changed? }] -> HTML, marking blocks that contain a change
+function wikiToHtml(lines) {
+  const out = [];
+  let list = [], table = null;
+  const cls = c => c ? ' class="chg"' : '';
+  const closeList = () => { while (list.length) out.push(list.pop().close); };
+  const closeTable = () => { if (table) { out.push(`<div class="tbl"><table>${table.join('')}</table></div>`); table = null; } };
+  const flat = l => l.w ? l.w.map(([k, s]) => k === 'x' ? MO + s + MC : s).join('') : l.t;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i], t = flat(l);
+    let m;
+    if ((m = t.match(/^\{(code|noformat)(?::[^}]*)?\}(.*)$/))) {           // multi-line block
+      closeList(); closeTable();
+      const tag = m[1], body = [], changed = [l.changed];
+      let rest = m[2];
+      const endRe = new RegExp(`\\{${tag}\\}\\s*$`);
+      if (endRe.test(rest)) body.push(rest.replace(endRe, ''));
+      else {
+        if (rest) body.push(rest);
+        while (++i < lines.length) {
+          const x = flat(lines[i]); changed.push(lines[i].changed);
+          if (endRe.test(x)) { const before = x.replace(endRe, ''); if (before) body.push(before); break; }
+          body.push(x);
+        }
+      }
+      const text = esc(body.join('\n')).replace(/\u0001/g, '<mark class="add">').replace(/\u0002/g, '</mark>');
+      out.push(`<pre${cls(changed.some(Boolean))}><code>${text}</code></pre>`);
+      continue;
+    }
+    if ((m = t.match(/^\{(panel|quote|info|note|tip|warning)(?::[^}]*)?\}(.*)$/)) || /^\{(panel|quote|info|note|tip|warning)\}\s*$/.test(t)) {
+      const rest = m ? m[2].replace(/\{(panel|quote|info|note|tip|warning)\}\s*$/, '') : '';
+      if (rest.trim()) { closeList(); closeTable(); out.push(`<p${cls(l.changed)}>${inline(rest)}</p>`); }
+      continue;
+    }
+    if ((m = t.match(/^h([1-6])\.\s+(.*)$/))) { closeList(); closeTable(); out.push(`<h${m[1]}${cls(l.changed)}>${inline(m[2])}</h${m[1]}>`); continue; }
+    if ((m = t.match(/^bq\.\s+(.*)$/))) { closeList(); closeTable(); out.push(`<blockquote${cls(l.changed)}>${inline(m[1])}</blockquote>`); continue; }
+    if (/^-{4,}\s*$/.test(t)) { closeList(); closeTable(); out.push('<hr>'); continue; }
+    if ((m = t.match(/^([*#]+)\s+(.*)$/)) && !/^\*[^*\s].*\*$/.test(t)) {
+      closeTable();
+      const marks = m[1];
+      while (list.length > marks.length) out.push(list.pop().close);
+      while (list.length && list[list.length - 1].mark !== marks.slice(0, list.length).slice(-1)) out.push(list.pop().close);
+      while (list.length < marks.length) {
+        const mk = marks[list.length], tag = mk === '#' ? 'ol' : 'ul';
+        out.push(`<${tag}>`); list.push({ mark: mk, close: `</${tag}>` });
+      }
+      out.push(`<li${cls(l.changed)}>${inline(m[2])}</li>`);
+      continue;
+    }
+    if (t.startsWith('|')) {
+      closeList(); table = table || [];
+      const head = t.startsWith('||');
+      const cells = t.replace(/^\|\|?/, '').replace(/\|\|?\s*$/, '').split(head ? '||' : '|');
+      table.push(`<tr${cls(l.changed)}>${cells.map(c => `<${head ? 'th' : 'td'}>${inline(c.trim())}</${head ? 'th' : 'td'}>`).join('')}</tr>`);
+      continue;
+    }
+    closeList(); closeTable();
+    out.push(`<p${cls(l.changed)}>${inline(t)}</p>`);
+  }
+  closeList(); closeTable();
+  return out.join('');
+}
+const wikiText = s => wikiToHtml(String(s || '').split('\n').filter(x => x.trim() !== '').map(t => ({ t })));
+
+// ---------- sanitizer for Jira's own rendered HTML (comments) ----------
+const KEEP = new Set(['P', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'DEL', 'INS', 'SUB', 'SUP', 'CODE', 'PRE', 'BLOCKQUOTE',
+  'UL', 'OL', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TH', 'TD', 'HR', 'A', 'CITE']);
+const DROP = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE', 'NOSCRIPT', 'SVG', 'MATH', 'FORM', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA', 'LINK', 'META']);
+function sanitize(html) {
+  const src = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html').body;
+  const walk = (from, to) => {
+    for (const n of [...from.childNodes]) {
+      if (n.nodeType === 3) { to.appendChild(document.createTextNode(n.nodeValue)); continue; }
+      if (n.nodeType !== 1) continue;
+      const tag = n.tagName;
+      if (DROP.has(tag)) continue;
+      if (tag === 'IMG') {
+        const alt = n.getAttribute('alt') || '';
+        if (n.classList.contains('emoticon')) to.appendChild(document.createTextNode(alt));
+        else { const s = document.createElement('span'); s.className = 'ph'; s.textContent = `[image${alt ? ': ' + alt : ''}]`; to.appendChild(s); }
+        continue;
+      }
+      if (tag === 'TT') { const c = document.createElement('code'); walk(n, c); to.appendChild(c); continue; }
+      if (!KEEP.has(tag)) { walk(n, to); if (tag === 'DIV') to.appendChild(document.createElement('br')); continue; }
+      const el = document.createElement(tag.toLowerCase());
+      if (tag === 'A') {
+        const href = safeHref(n.getAttribute('href'));
+        if (href) { el.setAttribute('href', href); el.setAttribute('target', '_blank'); el.setAttribute('rel', 'noopener'); }
+      }
+      if (tag === 'TD' || tag === 'TH') for (const a of ['colspan', 'rowspan']) { const v = n.getAttribute(a); if (v && /^\d{1,3}$/.test(v)) el.setAttribute(a, v); }
+      walk(n, el);
+      if (tag === 'TABLE') { const w = document.createElement('div'); w.className = 'tbl'; w.appendChild(el); to.appendChild(w); }
+      else to.appendChild(el);
+    }
+  };
+  const box = document.createElement('div');
+  walk(src, box);
+  return box.innerHTML;
+}
+const bodyHtml = b => b.format === 'html' ? sanitize(b.text) : wikiText(b.text);
+
+// ---------- dates (ts strings are already in the chosen zone) ----------
+const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function parts(ts) { const m = String(ts || '').match(/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)([+-]\d\d):(\d\d)$/); return m && { y: +m[1], m: +m[2], d: +m[3], H: m[4], M: m[5], S: m[6], z: m[7] + m[8] }; }
+const fmtShort = ts => { const p = parts(ts); return p ? `${MON[p.m - 1]} ${String(p.d).padStart(2, ' ')} ${p.H}:${p.M}` : ''; };
+const fmtIso = ts => { const p = parts(ts); return p ? `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')} ${p.H}:${p.M}` : ''; };
+const fmtGit = ts => { const p = parts(ts); if (!p) return ''; const wd = WD[new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay()]; return `${wd} ${MON[p.m - 1]} ${p.d} ${p.H}:${p.M}:${p.S} ${p.y} ${p.z}`; };
+const zoneOf = ts => { const p = parts(ts); return p ? p.z.replace(/(\d\d)(\d\d)$/, '$1:$2') : ''; };
+const days = (a, b) => { const x = parts(a), y = parts(b); return x && y ? Math.round((Date.UTC(y.y, y.m - 1, y.d) - Date.UTC(x.y, x.m - 1, x.d)) / 864e5) : 0; };
+
+// ---------- header ----------
+function renderAlert() {
+  const el = document.getElementById('alert');
+  if (!DATA.warnings.length) return;
+  el.innerHTML = `<div class="wrap"><div><b>Incomplete or partial history.</b> What is shown below may be missing entries:</div>${DATA.warnings.map(w => `<div>· ${esc(w)}</div>`).join('')}</div>`;
+  el.hidden = false;
+}
+function renderHeader() {
+  const all = DATA.commits;
+  const counts = new Map();
+  all.forEach(c => counts.set(c.author, (counts.get(c.author) || 0) + 1));
+  const bots = new Set(all.filter(c => c.bot).map(c => c.author));
+  const sl = [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  const pills = [T.type, T.status, T.priority].map((v, i) => v ? `<span class="pill${i === 1 ? ' status' : ''}">${esc(v)}</span>` : '').join('');
+  const facts = [
+    T.assignee !== undefined && ['Assignee', T.assignee ? esc(T.assignee) : '<span class="count">Unassigned</span>'],
+    T.reporter && ['Reporter', esc(T.reporter)],
+    T.parent && T.parent.key && ['Parent', `${SITE ? `<a href="${esc(SITE)}/browse/${esc(T.parent.key)}" target="_blank" rel="noopener">${esc(T.parent.key)}</a>` : esc(T.parent.key)} ${esc(T.parent.summary)}`],
+    T.created && ['History', `<span class="num">${all.length} entries over ${days(T.created, T.updated || T.created)} days, ${fmtIso(T.created)} → ${fmtIso(T.updated || T.created)} (${zoneOf(T.created)})</span>`],
+    DATA.fetched_at && ['Fetched', `<span class="num">${fmtIso(DATA.fetched_at)}</span>`],
+  ].filter(Boolean);
+  const D = DATA.dev;
+  const dev = D ? `<div class="panel"><h2>Development</h2><div class="small num">
+      ${D.branches ? `<div>${D.branches} branch${D.branches > 1 ? 'es' : ''}${D.commits ? `, ${D.commits} commit${D.commits > 1 ? 's' : ''}` : ''}</div>` : ''}
+      ${D.pull_requests ? `<div>${D.pull_requests} pull/merge request${D.pull_requests > 1 ? 's' : ''}${D.pull_request_state ? `, ${esc(D.pull_request_state.toLowerCase())}` : ''}</div>` : ''}
+      ${D.builds ? `<div>${D.builds} build${D.builds > 1 ? 's' : ''}${D.failed_builds ? `, <span class="fail">${D.failed_builds} failed</span>` : ''}</div>` : ''}
+      ${D.deployments ? `<div>${D.deployments} deployment${D.deployments > 1 ? 's' : ''}</div>` : ''}
+    </div></div>` : '';
+  const title = T.url ? `<a href="${esc(T.url)}" target="_blank" rel="noopener"><span class="key">${esc(T.key)}</span>${esc(T.summary)}</a>` : `<span class="key">${esc(T.key)}</span>${esc(T.summary)}`;
+  document.getElementById('hdr').innerHTML = `
+    <div style="min-width:0">
+      <p class="cmd"><span class="p">$</span> jira-ticket-history ${esc(T.key)}</p>
+      <h1>${title}</h1>
+      <div class="pills">${pills}</div>
+      <dl class="facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+    </div>
+    <div class="side">
+      <div class="panel"><h2>Authors <code>git shortlog -sn</code></h2>
+        <ol class="shortlog">${sl.map(([who, n]) => `<li><span class="n num">${n}</span><span class="who${bots.has(who) ? ' bot' : ''}" title="${esc(who)}">${esc(who)}${bots.has(who) ? ' · automation' : ''}</span></li>`).join('')}</ol>
+      </div>
+      <div class="panel"><h2>Fetched</h2><div class="small num">
+        ${DATA.fetch.map(f => `<div>${f.complete ? '<span class="okmark">✓</span>' : '<span class="badmark">!</span>'} ${esc(f.what)}: ${f.got} of ${f.total == null ? '?' : f.total}${f.pages > 1 ? `, ${f.pages} pages` : ''}</div>`).join('')}
+        ${DATA.excluded_fields.length ? `<div class="count">Not tracked (your settings): ${DATA.excluded_fields.map(esc).join(', ')}</div>` : ''}
+      </div></div>
+      ${dev}
+    </div>`;
+}
+
+// ---------- filters ----------
+const visibleAll = () => DATA.commits.filter(c => !(state.hideBots && c.bot));
+function typeCounts() {
+  const n = Object.fromEntries(TYPES.map(t => [t.id, 0]));
+  visibleAll().forEach(c => new Set(c.changes.map(x => x.cat)).forEach(k => n[k]++));
+  return n;
+}
+function renderTypes() {
+  const n = typeCounts();
+  const avail = TYPES.filter(t => n[t.id] > 0);
+  const on = avail.filter(t => state.types[t.id]).length;
+  document.getElementById('types').innerHTML =
+    `<label class="all"><input type="checkbox" id="f-all" ${avail.length && on === avail.length ? 'checked' : ''}>All <span class="count">${visibleAll().length}</span></label>` +
+    TYPES.map(t => n[t.id]
+      ? `<label><input type="checkbox" id="f-${t.id}" data-type="${t.id}" ${state.types[t.id] ? 'checked' : ''}>${t.label} <span class="count">${n[t.id]}</span></label>`
+      : `<label class="off" title="None in this ticket's history"><input type="checkbox" id="f-${t.id}" disabled>${t.label} <span class="count">0</span></label>`).join('');
+  document.getElementById('f-all').indeterminate = on > 0 && on < avail.length;
+}
+function visible() {
+  const out = [];
+  for (const c of visibleAll()) {
+    const shown = c.changes.filter(x => state.types[x.cat]);
+    if (shown.length) out.push({ ...c, shown });
+  }
+  return state.order === 'desc' ? out.reverse() : out;
+}
+
+// ---------- entries ----------
+const who = c => `${esc(c.author)}${c.bot ? '<span class="botmark">automation</span>' : ''}`;
+const deco = c => c.transition && c.transition.to ? `<span class="deco">(<span class="br">${esc(c.transition.to)}</span>)</span> ` : '';
+const tags = c => [...new Set(c.shown.map(x => x.cat))].map(k => `<span class="tag">${TYPE_LABEL[k]}</span>`).join(' ');
+const words = segs => segs.map(([k, t]) => k === 'x' ? `<mark>${esc(t)}</mark>` : esc(t)).join('');
+
+function diffHtml(c, x, d) {
+  const name = x.cat === 'description' ? 'description' : x.label;
+  const enc = d.encoding || { before: [], after: [] };
+  if (d.markup_only && enc.before.length && !enc.after.length)
+    return `<p class="note">This edit only repaired broken characters that an earlier save had stored (${enc.before.map(esc).join(', ')}). The text is otherwise the same.</p>`;
+  if (d.markup_only && enc.after.some(x => !enc.before.includes(x)))
+    return `<p class="note">This edit saved the text with broken characters (${enc.after.map(esc).join(', ')}). The words did not change, and the page shows them repaired.</p>`;
+  if (d.markup_only) return `<p class="note">Only Jira markup changed (escape characters or blank lines). The text reads the same before and after.</p>`;
+  const mode = state.mode[c.id + '|' + x.field_id] || 'diff';
+  const head = `<div class="dh"><span>${esc(name)} <span class="num">(+${d.add} −${d.del})</span></span><span class="seg" role="group" aria-label="${esc(name)} view"><button type="button" data-mode="diff" data-key="${esc(c.id + '|' + x.field_id)}" aria-pressed="${mode === 'diff'}">Diff</button><button type="button" data-mode="full" data-key="${esc(c.id + '|' + x.field_id)}" aria-pressed="${mode === 'full'}">Full text</button></span></div>`;
+  const notes = (d.adf ? `<p class="note">One side of this edit was saved in Jira's rich-text format (ADF). It was converted to wiki markup for the diff.</p>` : '') +
+    (enc.after.length ? `<p class="note">Jira stored this version with broken characters (${enc.after.map(esc).join(', ')}). They are shown repaired here.</p>` : '');
+  let body;
+  if (mode === 'full') {
+    body = d.full.length
+      ? `<div class="legendline"><i></i>${esc(name[0].toUpperCase() + name.slice(1))} after this edit. Changed passages are marked.</div><div class="rich">${wikiToHtml(d.full.map(l => ({ t: l.t, w: l.w, changed: l.k === '+' })))}</div>`
+      : `<div class="rich"><p class="ph">Empty after this edit.</p></div>`;
+  } else {
+    body = d.hunks.map(h => {
+      if (h.k === '~') return `<div class="dl skip"><span></span><span>⋯ ${h.n} unchanged line${h.n > 1 ? 's' : ''}</span></div>`;
+      const cls = h.k === '+' ? 'add' : h.k === '-' ? 'del' : 'ctx', sign = h.k === '=' ? ' ' : h.k === '-' ? '−' : '+';
+      return `<div class="dl ${cls}"><span>${sign}</span><span>${h.w ? words(h.w) : esc(h.t)}</span></div>`;
+    }).join('');
+  }
+  return `${notes}<div class="diff">${head}${body}</div>`;
+}
+function detailHtml(c) {
+  const parts = [];
+  const plain = c.shown.filter(x => !x.diff && !x.deleted && !(x.words && x.from) && !x.initial && !x.initial_html && c.kind !== 'comment');
+  if (plain.length) parts.push(`<dl class="changes">${plain.map(x => `<dt>${esc(x.label)}</dt><dd>${x.from ? `<span class="from">${esc(x.from)}</span><span class="arrow">→</span>` : ''}${x.to ? `<span class="to">${autolink(esc(x.to))}</span>` : `<span class="none">${x.from ? 'cleared' : 'empty'}</span>`}</dd>`).join('')}</dl>`);
+  for (const x of c.shown) {
+    if (x.words && x.from) parts.push(`<div class="diff"><div class="dh"><span>title</span></div><div class="dl del"><span>−</span><span>${words(x.words.del)}</span></div><div class="dl add"><span>+</span><span>${words(x.words.add)}</span></div></div>`);
+    if (x.diff) parts.push(diffHtml(c, x, x.diff));
+    if (x.initial) parts.push(`<div class="diff"><div class="dh"><span>description when created</span></div><div class="rich">${wikiToHtml(x.initial.map(t => ({ t })))}</div></div>`);
+    if (x.initial_html) parts.push(`<div class="diff"><div class="dh"><span>description when created</span></div><div class="rich">${sanitize(x.initial_html)}</div></div>`);
+    if (x.deleted) parts.push(`<p class="note">This comment was deleted. Jira kept its last text in the history:</p><div class="diff">${x.deleted.split('\n').filter(l => l.trim()).map(l => `<div class="dl del"><span>−</span><span>${esc(l)}</span></div>`).join('')}</div>`);
+  }
+  if (c.body) parts.push(`<div class="body rich">${bodyHtml(c.body)}</div>`);
+  return parts.join('');
+}
+function metaLine(c) {
+  const bits = [esc(fmtGit(c.ts))];
+  if (c.started) bits.push(`work started ${esc(fmtShort(c.started))}`);
+  if (c.parent) bits.push(`reply to ${esc(c.parent)}`);
+  if (c.visibility) bits.push(`visible only to ${esc(c.visibility)}`);
+  if (c.edited) bits.push(`edited ${esc(fmtShort(c.edited))}${c.kind === 'comment' ? ' · Jira keeps no earlier versions' : ''}`);
+  return bits.join(' · ');
+}
+
+function render() {
+  renderTypes();
+  document.getElementById('f-bots').checked = state.hideBots;
+  document.getElementById('f-order').value = state.order;
+  const list = visible(), all = DATA.commits.length, shownAll = visibleAll().length;
+  const el = document.getElementById('log');
+  if (!all) { el.innerHTML = `<p class="empty">This ticket has no history entries.</p>`; return; }
+  if (!list.length) { el.innerHTML = `<p class="empty">Nothing matches these filters. Tick <b>All</b> to see every entry again.</p>`; return; }
+  const filtered = list.length < all;
+  el.innerHTML = `<p class="viewnote">${filtered ? '<b>Filtered:</b> ' : ''}<span class="num">${list.length}</span> of <span class="num">${all}</span> entries shown${state.hideBots && all > shownAll ? ` · <span class="num">${all - shownAll}</span> automation entries hidden` : ''}. Click a row to see what changed.</p>
+  <div class="log">${list.map(c => {
+    const open = state.open.has(c.id);
+    return `<div class="row${open ? ' open' : ''}${c.bot ? ' botrow' : ''}" data-id="${esc(c.id)}">
+      <button type="button" aria-expanded="${open}" aria-controls="d-${esc(c.id)}"><span class="caret">▶</span><span class="h" title="${esc(c.id)}">${esc(c.id)}</span><span class="date num">${esc(fmtShort(c.ts))}</span><span class="who" title="${esc(c.author)}">${esc(c.author)}</span><span class="subj" title="${esc(c.subject)}">${deco(c)}${esc(c.subject)}</span><span>${tags(c)}</span></button>
+      <div class="detail" id="d-${esc(c.id)}" ${open ? '' : 'hidden'}><div class="meta">${who(c)} · ${metaLine(c)}</div>${open ? detailHtml(c) : ''}</div>
+    </div>`; }).join('')}</div>`;
+}
+
+document.getElementById('types').addEventListener('change', e => {
+  const t = e.target, n = typeCounts();
+  if (t.id === 'f-all') TYPES.forEach(x => { if (n[x.id]) state.types[x.id] = t.checked; });
+  else if (t.dataset.type) state.types[t.dataset.type] = t.checked;
+  render();
+});
+document.getElementById('f-bots').addEventListener('change', e => { state.hideBots = e.target.checked; render(); });
+document.getElementById('f-order').addEventListener('change', e => { state.order = e.target.value; render(); });
+document.getElementById('f-expand').addEventListener('click', () => { visible().forEach(c => state.open.add(c.id)); render(); });
+document.getElementById('f-collapse').addEventListener('click', () => { state.open.clear(); render(); });
+document.getElementById('log').addEventListener('click', e => {
+  const seg = e.target.closest('.seg button');
+  if (seg) { state.mode[seg.dataset.key] = seg.dataset.mode; render(); return; }
+  const b = e.target.closest('.row > button');
+  if (!b) return;
+  const id = b.parentElement.dataset.id;
+  state.open.has(id) ? state.open.delete(id) : state.open.add(id);
+  render();
+  const again = [...document.querySelectorAll('.row')].find(r => r.dataset.id === id);
+  if (again) again.querySelector('button').focus();
+});
+
+renderAlert();
+renderHeader();
+render();
+</script>
+</body>
+</html>

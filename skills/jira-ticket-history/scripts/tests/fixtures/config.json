@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "automation_accounts": [
+    "u-ci"
+  ],
+  "history": {
+    "exclude_fields": [
+      "customfield_10019"
+    ]
+  },
+  "output": {
+    "order": "desc"
+  }
+}

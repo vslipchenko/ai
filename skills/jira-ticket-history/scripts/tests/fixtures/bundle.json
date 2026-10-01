@@ -1,0 +1,476 @@
+{
+  "bundle_version": 1,
+  "site": "https://example.atlassian.net",
+  "key": "DEMO-42",
+  "deployment": "cloud",
+  "fetched_at": "2026-03-04T08:00:00.000Z",
+  "issue": {
+    "id": "10042",
+    "key": "DEMO-42",
+    "description_format": "wiki",
+    "fields": {
+      "summary": "Add retry with backoff",
+      "description": "h2. Goal\n\nRetry failed deliveries with exponential backoff — capped at 5 minutes.\n\nh2. Notes\n\n* up to 5 times\n* log each failure\n* expose a metric\n\nCovered by *DEMO-7*.",
+      "status": {
+        "name": "In Review"
+      },
+      "issuetype": {
+        "name": "Story"
+      },
+      "priority": {
+        "name": "Low"
+      },
+      "assignee": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "reporter": {
+        "accountId": "u-grace",
+        "displayName": "Grace Hopper",
+        "accountType": "atlassian"
+      },
+      "creator": {
+        "accountId": "u-grace",
+        "displayName": "Grace Hopper",
+        "accountType": "atlassian"
+      },
+      "parent": {
+        "key": "DEMO-1",
+        "fields": {
+          "summary": "Reliability"
+        }
+      },
+      "created": "2026-03-02T09:59:00.000+0200",
+      "updated": "2026-03-03T16:40:00.000+0200",
+      "customfield_10500": "{summaryBean=com.atlassian.jira.plugin.devstatus.rest.SummaryBean@1[summary={}]}, json={\"cachedValue\":{\"errors\":[],\"summary\":{\"pullrequest\":{\"overall\":{\"count\":2,\"state\":\"MERGED\",\"dataType\":\"pullrequest\"}},\"build\":{\"overall\":{\"count\":3,\"failedBuildCount\":1,\"successfulBuildCount\":2,\"dataType\":\"build\"}},\"repository\":{\"overall\":{\"count\":4,\"dataType\":\"repository\"}}}},\"isStale\":false}}"
+    },
+    "names": {
+      "customfield_10500": "Development"
+    },
+    "schema": {
+      "customfield_10500": {
+        "type": "any",
+        "custom": "com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf"
+      }
+    }
+  },
+  "changelog": [
+    {
+      "id": "1001",
+      "created": "2026-03-02T10:00:05.000+0200",
+      "author": {
+        "accountId": "u-auto",
+        "displayName": "Automation for Jira",
+        "accountType": "app"
+      },
+      "items": [
+        {
+          "field": "priority",
+          "fieldtype": "jira",
+          "fieldId": "priority",
+          "from": "3",
+          "fromString": "Major",
+          "to": "4",
+          "toString": "Low"
+        }
+      ]
+    },
+    {
+      "id": "1002",
+      "created": "2026-03-02T10:05:00.000+0200",
+      "author": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "assignee",
+          "fieldtype": "jira",
+          "fieldId": "assignee",
+          "to": "u-ada",
+          "toString": "Ada Lovelace"
+        },
+        {
+          "field": "status",
+          "fieldtype": "jira",
+          "fieldId": "status",
+          "from": "1",
+          "fromString": "To Do",
+          "to": "3",
+          "toString": "In Progress"
+        }
+      ]
+    },
+    {
+      "id": "1003",
+      "created": "2026-03-02T10:06:00.000+0200",
+      "author": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "summary",
+          "fieldtype": "jira",
+          "fieldId": "summary",
+          "fromString": "Add retry",
+          "toString": "Add retry with backoff"
+        }
+      ]
+    },
+    {
+      "id": "1004",
+      "created": "2026-03-02T11:00:00.000+0200",
+      "author": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "description",
+          "fieldtype": "jira",
+          "fieldId": "description",
+          "fromString": "h2. Goal\nRetry failed deliveries.\n\nh2. Notes\n* up to 3 times\n* log each failure",
+          "toString": "h2. Goal\nRetry failed deliveries with exponential backoff — capped at 5 minutes.\n\nh2. Notes\n* up to 5 times\n* log each failure\n* expose a metric"
+        }
+      ]
+    },
+    {
+      "id": "1005",
+      "created": "2026-03-02T11:10:00.000+0200",
+      "author": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "description",
+          "fieldtype": "jira",
+          "fieldId": "description",
+          "fromString": "h2. Goal\nRetry failed deliveries with exponential backoff — capped at 5 minutes.\n\nh2. Notes\n* up to 5 times\n* log each failure\n* expose a metric",
+          "toString": "h2. Goal\nRetry failed deliveries with exponential backoff — capped at 5 minutes\\.\n\nh2. Notes\n\n* up to 5 times\n* log each failure\n* expose a metric"
+        }
+      ]
+    },
+    {
+      "id": "1006",
+      "created": "2026-03-03T09:00:00.000+0200",
+      "author": {
+        "accountId": "u-grace",
+        "displayName": "Grace Hopper",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "description",
+          "fieldtype": "jira",
+          "fieldId": "description",
+          "fromString": "h2. Goal\nRetry failed deliveries with exponential backoff — capped at 5 minutes\\.\n\nh2. Notes\n\n* up to 5 times\n* log each failure\n* expose a metric",
+          "toString": "h2. Goal\nRetry failed deliveries with exponential backoff â€” capped at 5 minutes.\n\nh2. Notes\n* up to 5 times\n* log each failure\n* expose a metric"
+        }
+      ]
+    },
+    {
+      "id": "1007",
+      "created": "2026-03-03T09:30:00.000+0200",
+      "author": {
+        "accountId": "u-grace",
+        "displayName": "Grace Hopper",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "description",
+          "fieldtype": "jira",
+          "fieldId": "description",
+          "fromString": "h2. Goal\nRetry failed deliveries with exponential backoff â€” capped at 5 minutes.\n\nh2. Notes\n* up to 5 times\n* log each failure\n* expose a metric",
+          "toString": "h2. Goal\nRetry failed deliveries with exponential backoff — capped at 5 minutes.\n\nh2. Notes\n* up to 5 times\n* log each failure\n* expose a metric"
+        }
+      ]
+    },
+    {
+      "id": "1008",
+      "created": "2026-03-03T12:00:00.000+0200",
+      "author": {
+        "accountId": "u-grace",
+        "displayName": "Grace Hopper",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "description",
+          "fieldtype": "jira",
+          "fieldId": "description",
+          "fromString": "h2. Goal\nRetry failed deliveries with exponential backoff — capped at 5 minutes.\n\nh2. Notes\n* up to 5 times\n* log each failure\n* expose a metric",
+          "toString": "{\"type\":\"doc\",\"version\":1,\"content\":[{\"type\":\"heading\",\"attrs\":{\"level\":2},\"content\":[{\"type\":\"text\",\"text\":\"Goal\"}]},{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Retry failed deliveries with exponential backoff — capped at 5 minutes.\"}]},{\"type\":\"heading\",\"attrs\":{\"level\":2},\"content\":[{\"type\":\"text\",\"text\":\"Notes\"}]},{\"type\":\"bulletList\",\"content\":[{\"type\":\"listItem\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"up to 5 times\"}]}]},{\"type\":\"listItem\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"log each failure\"}]}]},{\"type\":\"listItem\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"expose a metric\"}]}]}]},{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Covered by \"},{\"type\":\"text\",\"text\":\"DEMO-7\",\"marks\":[{\"type\":\"strong\"}]},{\"type\":\"text\",\"text\":\".\"}]}]}"
+        }
+      ]
+    },
+    {
+      "id": "1009",
+      "created": "2026-03-03T12:30:00.000+0200",
+      "author": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "labels",
+          "fieldtype": "jira",
+          "fieldId": "labels",
+          "fromString": "backend",
+          "toString": "backend retry"
+        }
+      ]
+    },
+    {
+      "id": "1010",
+      "created": "2026-03-03T13:00:00.000+0200",
+      "author": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "Link",
+          "fieldtype": "jira",
+          "to": "DEMO-7",
+          "toString": "This work item relates to DEMO-7"
+        }
+      ]
+    },
+    {
+      "id": "1011",
+      "created": "2026-03-03T13:05:00.000+0200",
+      "author": {
+        "accountId": "u-ci",
+        "displayName": "CI Bot",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "RemoteWorkItemLink",
+          "fieldtype": "jira",
+          "to": "501",
+          "toString": "This work item links to \"Pull request #12 (Web Link)\""
+        }
+      ]
+    },
+    {
+      "id": "1012",
+      "created": "2026-03-03T13:10:00.000+0200",
+      "author": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "Attachment",
+          "fieldtype": "jira",
+          "to": "9001",
+          "toString": "trace.log"
+        }
+      ]
+    },
+    {
+      "id": "1013",
+      "created": "2026-03-03T13:20:00.000+0200",
+      "author": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "Area",
+          "fieldtype": "custom",
+          "fieldId": "customfield_10010",
+          "toString": "Parent values: Backend(100)Level 1 values: Queue(101)"
+        }
+      ]
+    },
+    {
+      "id": "1014",
+      "created": "2026-03-03T14:00:00.000+0200",
+      "author": {
+        "accountId": "u-grace",
+        "displayName": "Grace Hopper",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "Comment",
+          "fieldtype": "jira",
+          "fieldId": "comment",
+          "fromString": "Posted too early, see below."
+        }
+      ]
+    },
+    {
+      "id": "1015",
+      "created": "2026-03-03T15:00:00.000+0200",
+      "author": {
+        "accountId": "u-grace",
+        "displayName": "Grace Hopper",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "timespent",
+          "fieldtype": "jira",
+          "fieldId": "timespent",
+          "to": "3600",
+          "toString": "3600"
+        },
+        {
+          "field": "WorklogId",
+          "fieldtype": "jira",
+          "to": "7001",
+          "toString": "7001"
+        }
+      ]
+    },
+    {
+      "id": "1016",
+      "created": "2026-03-03T16:00:00.000+0200",
+      "author": {
+        "accountId": "u-ci",
+        "displayName": "CI Bot",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "status",
+          "fieldtype": "jira",
+          "fieldId": "status",
+          "from": "3",
+          "fromString": "In Progress",
+          "to": "10",
+          "toString": "In Review"
+        }
+      ]
+    },
+    {
+      "id": "1017",
+      "created": "2026-03-03T16:30:00.000+0200",
+      "author": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "Release notes",
+          "fieldtype": "custom",
+          "fieldId": "customfield_10020",
+          "fromString": "Adds retry.",
+          "toString": "Adds retry.\nBackoff is capped at 5 minutes."
+        }
+      ]
+    },
+    {
+      "id": "1018",
+      "created": "2026-03-03T16:40:00.000+0200",
+      "author": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "items": [
+        {
+          "field": "Rank",
+          "fieldtype": "custom",
+          "fieldId": "customfield_10019",
+          "toString": "Ranked higher"
+        }
+      ]
+    }
+  ],
+  "comments": [
+    {
+      "id": "3001",
+      "created": "2026-03-02T12:00:00.000+0200",
+      "updated": "2026-03-02T12:00:00.000+0200",
+      "author": {
+        "accountId": "u-grace",
+        "displayName": "Grace Hopper",
+        "accountType": "atlassian"
+      },
+      "body": "Can we cap it? See [DEMO-7|https://example.atlassian.net/browse/DEMO-7].",
+      "renderedBody": "<p>Can we cap it? See <a href=\"/browse/DEMO-7\">DEMO-7</a>.</p><script>alert(1)</script><table><tr><th>Try</th><th>Wait</th></tr><tr><td>1</td><td>2s</td></tr></table><p><img src=\"/secure/x.png\" alt=\"graph.png\"><a href=\"javascript:alert(1)\">bad link</a></p>"
+    },
+    {
+      "id": "3002",
+      "parentId": 3001,
+      "created": "2026-03-02T12:30:00.000+0200",
+      "updated": "2026-03-02T12:45:00.000+0200",
+      "author": {
+        "accountId": "u-ada",
+        "displayName": "Ada Lovelace",
+        "accountType": "atlassian"
+      },
+      "body": "Yes — *five minutes* max, tracked in {{RetryPolicy}}."
+    },
+    {
+      "id": "3003",
+      "created": "2026-03-03T14:05:00.000+0200",
+      "updated": "2026-03-03T14:05:00.000+0200",
+      "author": {
+        "accountId": "u-grace",
+        "displayName": "Grace Hopper",
+        "accountType": "atlassian"
+      },
+      "body": "Internal: load test numbers are in the team space.",
+      "renderedBody": "<p>Internal: load test numbers are in the team space.</p>",
+      "visibility": {
+        "type": "role",
+        "value": "Developers"
+      }
+    }
+  ],
+  "worklogs": [
+    {
+      "id": "7001",
+      "author": {
+        "accountId": "u-grace",
+        "displayName": "Grace Hopper",
+        "accountType": "atlassian"
+      },
+      "created": "2026-03-03T15:00:00.000+0200",
+      "updated": "2026-03-03T15:00:00.000+0200",
+      "started": "2026-03-03T13:00:00.000+0200",
+      "timeSpent": "1h",
+      "timeSpentSeconds": 3600,
+      "comment": "Load test of the *backoff*."
+    }
+  ],
+  "completeness": {
+    "changelog": {
+      "got": 18,
+      "total": 18,
+      "pages": 1,
+      "complete": true
+    },
+    "comments": {
+      "got": 3,
+      "total": 3,
+      "pages": 1,
+      "complete": true
+    },
+    "worklogs": {
+      "got": 1,
+      "total": 1,
+      "pages": 1,
+      "complete": true
+    }
+  },
+  "errors": []
+}
