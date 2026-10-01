@@ -155,6 +155,8 @@ guessing:
    testing you performed.
 7. **Output defaults** — terminal or CSV, which columns, times on or off,
    default range.
+8. **Custom instructions** (optional) — anything else the report should always
+   do or take into account, in your own words.
 
 Everything is shown back to you in plain language before it's saved to
 `~/.dev-timesheet-report/config.json`.
@@ -170,6 +172,26 @@ to that report only:
 
 Your saved config is untouched unless you say "save that" or "make that my
 default".
+
+## Custom instructions
+
+For preferences the structured settings don't cover, store free text in
+`instructions` and it's applied automatically on every run:
+
+```json
+"instructions": "Treat OPS-* tickets as Investigation. Skip the sandbox repo. End with a 3-bullet standup summary."
+```
+
+Where an instruction maps to a real setting (a label rule, a column, a skipped
+repo) it's applied as a one-run override, so the scripts still do the
+labelling and formatting; the rest steers how the report is put together and
+presented. What you say in the conversation wins over it, and it can't hide
+failed sources or make the skill write to Jira. The status block mentions when
+instructions were applied.
+
+Like any other setting it's overridable: "ignore my instructions this time",
+"this time also …", or "add that to my instructions" / "clear my instructions"
+to change the saved text.
 
 ## Using only some sources
 

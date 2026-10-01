@@ -70,5 +70,6 @@
     "untracked": "include",
     "untracked_placeholder": "(no ticket)",
     "missing_title_placeholder": "(title unavailable)"
-  }
+  },
+  "instructions": null
 }

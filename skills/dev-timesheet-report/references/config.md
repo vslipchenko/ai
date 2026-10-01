@@ -19,6 +19,7 @@ overridden for a single run without touching the file (see "Overrides" below).
 | `activity_rules` | Ordered evidence → label rules. **First match wins.** |
 | `range` | Default reporting window and week start. |
 | `output` | Format, columns, time granularity, CSV destination. |
+| `instructions` | Optional free-text guidance applied on every run. Default `null`. See below. |
 
 ## `identity`
 
@@ -248,6 +249,53 @@ than as columns, so listing them in `columns` never duplicates them into every
 line. In **CSV** they are two separate columns on purpose: folding `(Tue)` into
 the `date` cell would stop Excel and Sheets recognizing it as a date.
 
+## `instructions`
+
+```json
+{
+  "instructions": "Treat OPS-* tickets as Investigation, never Coding. Skip the sandbox repo on Fridays. Always end with a 3-bullet summary of the week for my standup."
+}
+```
+
+Free text, or `null` (the default — absent is the same as `null`). It is the
+escape hatch for preferences the structured fields cannot express, and it is
+read **every run, after the config loads and before Step 2**, as standing
+guidance from the user.
+
+How to apply it:
+
+- **Translate it into overrides wherever one exists.** "OPS tickets are
+  Investigation" becomes an in-memory rule placed ahead of the catch-all;
+  "always CSV" becomes `output.format`; "never the sandbox repo" disables that
+  `local_repos` entry. `build_report` still does the labelling, grouping and
+  formatting — an instruction never means hand-editing its table, or two runs
+  over the same week stop agreeing.
+- **What has no override shapes the agent's own work**: how ambiguous ranges
+  are read, extra notes or a summary after the report, which follow-ups to
+  offer, tone of the status block.
+- **Explicit requests in the current conversation win** over the stored
+  instructions, the same way they win over every other config field.
+- **It cannot switch off the safety rules.** The skill stays read-only against
+  every source, failed and disabled sources are still reported in the status
+  block, and the resolved range is still stated. An instruction that asks for
+  any of those to go away is followed as far as it can be and the conflict is
+  said once, plainly — a timesheet that hides a failed source is the one
+  output this skill must never produce.
+- **If an instruction is ambiguous or contradicts the structured config** (it
+  names a repo that is not configured, a label not in `activity_labels`), say
+  so in the status block rather than guessing silently.
+
+Mention in the status block that stored instructions were applied — one short
+line, not the text itself — so a report shaped by them is never mistaken for
+the plain defaults.
+
+Overriding it follows the same rules as everything else: "ignore my
+instructions this time" runs with `null`; "this time also …" appends for one
+run; "instead, …" replaces for one run. Only "save that" / "add that to my
+instructions" / "clear my instructions" writes back. When saving an addition,
+show the resulting full text before writing, since appended instructions can
+quietly contradict earlier ones.
+
 ## Event schema
 
 Every source normalizes to this shape before it reaches `build_report`:
@@ -346,3 +394,6 @@ explicit "save this" / "make this my default" writes back. Common shapes:
 | "skip Jira this time" | `board.enabled = false` |
 | "only GitLab" / "just my local repos" | disable every source but that one, this run only |
 | "for ABC only" | restrict `board.projects` |
+| "ignore my instructions this time" | `instructions = null` |
+| "this time also mark OPS tickets as Investigation" | append to `instructions`, this run only |
+| "add that to my instructions" / "clear my instructions" | write `instructions` back |

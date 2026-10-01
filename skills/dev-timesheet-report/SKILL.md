@@ -85,6 +85,14 @@ setup"). Never re-run setup just because the skill was invoked again.
 Load `references/config.md` before reading or writing the config file — the
 schema is there, not in memory.
 
+**Then read `config.instructions`.** When it is a non-empty string, it is the
+user's standing guidance for every run — treat it as if they had typed it at
+the start of this request, and let it shape Steps 2-7. Apply it the way
+`references/config.md` ("`instructions`") describes: turn it into per-run
+overrides wherever one exists, use it to steer judgment where none does, let
+anything said in the current conversation win over it, and never let it
+switch off the read-only rule or the Step 7 source reporting.
+
 ## Step 2 — Resolve the range and any per-run overrides
 
 **Range.** Explicit wins ("last week", "September 1-7", "yesterday", "this
@@ -95,7 +103,9 @@ silent interpretation produces the wrong invoice.
 
 **Overrides.** Anything in the config can be overridden for this run: format,
 columns, time granularity, which repos or projects to include, label names, a
-source to skip. Apply them to an in-memory copy.
+source to skip, and the stored `instructions` themselves ("ignore my
+instructions this time", "this time also …"). Apply them to an in-memory copy,
+on top of whatever the stored instructions already turned into overrides.
 
 **"Only X" means disable everything else** — "only Jira", "just GitLab this
 time", "skip the local repos". A single-source report is a legitimate request,
@@ -325,6 +335,14 @@ something it does not. Point them at "What the tools cannot see" instead.
 **6g. Output defaults.** Format, columns, whether times are on, default range,
 and a default CSV path if they want one.
 
+Then ask, once and optionally, whether there is anything else the report
+should always do or take into account — free text, saved as `instructions`.
+Offer an example or two (a ticket prefix that is always Investigation, a
+standup summary after the table) so the question is concrete. "No" leaves it
+`null`; do not push. If an answer maps cleanly onto a structured field (a
+rule, a column, a disabled repo), set that field instead and say so — a
+structured setting is checked by the scripts, free text is not.
+
 **6h. Confirm and save.** Show the assembled config in plain language — not raw
 JSON — and let the user correct it before writing. Mention that tokens are read
 from environment variables and never stored in the file.
@@ -344,7 +362,9 @@ Then run the report the user originally asked for.
 
 Handle these without redoing all of 6a-6h, writing the single change back
 immediately: add or remove a repo, add a project key, rename a label, edit one
-rule, change the default format/columns/range, re-resolve one identity field.
+rule, change the default format/columns/range, re-resolve one identity field,
+add to / replace / clear the custom `instructions` (show the resulting full
+text before writing an addition).
 
 ## Step 7 — Deliver
 
@@ -360,6 +380,8 @@ Alongside the report, give a short status block — not a narrative:
   run.
 - If `board.projects` is empty, warn that generic ticket-key matching is in
   play and rows like `UTF-8` may be junk.
+- If stored `instructions` were applied, one line saying so (not the full
+  text), plus any part of them that could not be followed and why.
 
 Offer to save any per-run overrides as the new default only when the user seems
 to be repeating them; do not ask after every run.
