@@ -1,6 +1,6 @@
 # ai
 
-*Standalone plugins and skills for the AI domain.*
+*Standalone plugins and skills for AI agents.*
 
 Each plugin under `plugins/` is self-contained (its own README, license, skills,
 and commands); `skills/` holds standalone skills not bundled into a plugin.
