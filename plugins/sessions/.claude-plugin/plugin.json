@@ -1,0 +1,18 @@
+{
+  "name": "sessions",
+  "description": "Save your open Claude Code terminal sessions before a reboot and restore them afterwards: one terminal tab per session, each resumed in its original folder. Windows.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "repository": "https://github.com/vslipchenko/ai/tree/main/plugins/sessions",
+  "keywords": [
+    "sessions",
+    "resume",
+    "restore",
+    "reboot",
+    "terminal",
+    "windows-terminal"
+  ],
+  "author": {
+    "name": "Vladyslav Slipchenko"
+  }
+}
