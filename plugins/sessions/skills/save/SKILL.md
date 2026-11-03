@@ -1,22 +1,31 @@
 ---
 name: save
-description: Save the currently open Claude Code terminal sessions (session id + folder + shell) so they can be closed and reopened later (after a reboot, a terminal update, or the next day) with the `restore` skill. Lists the live sessions and lets the user pick which to keep; replaces the previously saved set (asking first if it was never restored). Use when the user wants to save / snapshot / remember / bookmark their open Claude sessions or terminals, e.g. "save my sessions", "I need to reboot, save my claude sessions", "save my sessions, I'm updating my terminal", "save these so I can continue tomorrow". Windows only.
+description: Save the currently open Claude Code terminal sessions (session id + folder + shell) so they can be closed and reopened later (after a reboot, a terminal update, or the next day) with the `restore` skill. Lists the live sessions and lets the user pick which to keep; replaces the previously saved set (asking first if it was never restored). Use when the user wants to save / snapshot / remember / bookmark their open Claude sessions or terminals, e.g. "save my sessions", "I need to reboot, save my claude sessions", "save my sessions, I'm updating my terminal", "save these so I can continue tomorrow". Windows and Linux.
 ---
 
 # Sessions — Save
 
 Snapshot the live Claude Code sessions the user picks, so `restore` can reopen
 each one in its folder (`claude --resume <id>`) whenever the user wants them
-back. Windows only.
+back. Windows and Linux.
 
 ## Script
 
-All discovery and file work is done by one script. Run it with the PowerShell
-tool (or Bash — the command is the same):
+All discovery and file work is done by one script per OS. Pick the command for
+the OS you're running on (the environment tells you the platform); the options
+and JSON output are identical.
 
-```
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/sessions.ps1" <command> [options]
-```
+- **Windows** — run with the PowerShell tool (or Bash):
+  ```
+  powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/sessions.ps1" <command> [options]
+  ```
+- **Linux** — run with Bash:
+  ```
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sessions.py" <command> [options]
+  ```
+  If `python3` is not installed, tell the user the plugin needs Python 3 on
+  Linux (e.g. `sudo apt install python3`) and stop.
+- **macOS** — not supported yet: say so and stop.
 
 If `${CLAUDE_PLUGIN_ROOT}` above was not replaced with a real path, use the
 folder two levels above this skill's base directory instead. Pass
@@ -31,11 +40,16 @@ carries `error` and `message` — report the message and stop.
 ```
 
 Result: `sessions[]` with `sessionId`, `cwd`, `title`, `lastPrompt`,
-`isCurrent`, `shell` (`gitbash` / `pwsh` / `powershell` / `cmd` / null) and
-`host` (`wt` / `console` / `mintty` / `vscode` / `jetbrains` / null), plus `source`,
+`isCurrent`, `shell` and `host`, plus `source`,
 `hiddenNonInteractive` and `pendingSnapshot`. `shell` and `host` are stored
 with the snapshot so `restore` reopens each session in the same kind of
-terminal.
+terminal:
+- Windows — `shell`: `gitbash` / `pwsh` / `powershell` / `cmd`; `host`: `wt` /
+  `console` / `mintty` / `vscode` / `jetbrains`;
+- Linux — `shell`: `bash` / `zsh` / `fish` / `sh` / others; `host`: the
+  terminal (`gnome-terminal`, `konsole`, `kitty`, `xterm`, …), `tmux` (with
+  `tmuxSession`), `wt` (WSL in Windows Terminal), `vscode`, `ssh`;
+- either may be null when it couldn't be detected.
 
 Only one snapshot is kept: saving replaces the previous one. When the previous
 one still has sessions that were never restored, `pendingSnapshot` describes it
@@ -60,7 +74,8 @@ Build one option per session:
   must be unique — on a clash append the folder name, then the first 8 chars of
   the id.
 - **description**: the `cwd`, then ` · <shell name>` when `shell` is set
-  (Git Bash, PowerShell 7, Windows PowerShell, cmd), then
+  (Git Bash, PowerShell 7, Windows PowerShell, cmd, bash, zsh, fish, …) plus
+  the terminal when `host` is set (e.g. `zsh in kitty`, `bash in tmux`), then
   ` · last: <lastPrompt>` when present.
 
 Then, by count:
@@ -96,7 +111,7 @@ later, not about a reboot. Shape:
 ```
 Saved 3 sessions:
 
-- <title> (this session): <folder> (<shell>[, Windows Terminal])
+- <title> (this session): <folder> (<shell>[, <terminal>])
 - ...
 
 Whenever you want them back, start Claude Code in any folder and ask it to

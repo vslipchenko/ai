@@ -16,7 +16,7 @@
     {
       "name": "sessions",
       "source": "./plugins/sessions",
-      "description": "Save your open Claude Code terminal sessions and reopen them later (after a reboot, a terminal update, or the next day): each resumed in its original folder and terminal. Windows."
+      "description": "Save your open Claude Code terminal sessions and reopen them later (after a reboot, a terminal update, or the next day): each resumed in its original folder and terminal. Windows and Linux."
     }
   ]
 }

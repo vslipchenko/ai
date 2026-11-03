@@ -7,7 +7,8 @@ day), ask Claude to **save your sessions**: it lists the Claude Code sessions
 running on the machine and lets you pick which to keep. Later, start Claude
 Code anywhere and ask it to **restore your sessions**:
 each one reopens resumed in its original folder, in the same kind of terminal
-it ran in — Git Bash, PowerShell or cmd.
+it ran in — Git Bash, PowerShell or cmd on Windows; bash, zsh or fish in your
+terminal or tmux on Linux.
 
 No more writing session ids down.
 
@@ -20,8 +21,11 @@ claude plugin install sessions@vslipchenko
 
 Then restart Claude Code.
 
-**Requirements:** Windows 10/11 with Windows PowerShell 5.1 (built in).
-Git Bash and Windows Terminal are used when installed, never required.
+**Requirements:**
+- **Windows** 10/11 with Windows PowerShell 5.1 (built in). Git Bash and Windows
+  Terminal are used when installed, never required.
+- **Linux** with Python 3 (preinstalled on almost every desktop distro). Works
+  under WSL too. macOS is not supported yet.
 
 ## Skills
 
@@ -32,12 +36,15 @@ Git Bash and Windows Terminal are used when installed, never required.
 
 Both respond to natural language, e.g. *"save my sessions, I'm rebooting"*,
 *"restore my sessions"*, *"restore just the
-API one"*, *"restore them in cmd this time"*, *"always restore in Git Bash"*.
+API one"*, *"restore them in cmd this time"*, *"restore them in tmux"*,
+*"always restore in Git Bash"*.
 
 ## Where sessions reopen
 
-`save` records the shell each session was started from, and — when Windows can
-tell — the window it was in:
+`save` records the shell each session was started from, and — when it can be
+told — the window or terminal it was in.
+
+### Windows
 
 | Saved from | Reopens in |
 |---|---|
@@ -53,6 +60,21 @@ uninstalled), the session still opens, in PowerShell 7, else Windows
 PowerShell, else cmd, and you're told which session fell back and why. A
 missing Windows Terminal or Git Bash window (mintty) likewise falls back to
 the other.
+
+### Linux
+
+| Saved from | Reopens in |
+|---|---|
+| bash / zsh / fish / sh in GNOME Terminal, Ptyxis, Console, Konsole, xfce4-terminal, Tilix, Terminator, kitty, WezTerm, Alacritty, foot or xterm | the same shell in the same terminal |
+| tmux | a new window in the same tmux session (recreated detached if tmux was restarted; `tmux attach -t <name>`) |
+| WSL inside Windows Terminal | a Windows Terminal tab running WSL |
+| VS Code terminal, SSH, unknown | the system default / first installed terminal |
+
+**Fallbacks.** On Linux a missing shell falls back to bash, then sh; a missing
+terminal to Windows Terminal (under WSL), the system default terminal, any
+installed one, and finally a detached tmux session when there is no desktop at
+all. Either way the session still opens and you're told which one fell back
+and why.
 
 **Overrides.** Ask for a different shell for one restore, or set a default
 ("always restore in Git Bash"); the default is kept in the plugin's data folder
@@ -91,20 +113,30 @@ and can be cleared any time.
   let busy sessions finish first.
 - Claude Code deletes old conversations after its retention period
   (`cleanupPeriodDays`, default 30 days); those can't be resumed.
-- Windows only for now; other AI CLIs are not supported yet.
+- Windows and Linux only for now (no macOS yet); other AI CLIs are not
+  supported yet.
 
 ## Without Claude
 
 The script can also be run directly, e.g. to restore without first opening a
 Claude session:
 
+On Windows:
+
 ```powershell
 $p = Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\vslipchenko\sessions" -Directory | Sort-Object Name | Select-Object -Last 1
 powershell -NoProfile -ExecutionPolicy Bypass -File "$($p.FullName)\scripts\sessions.ps1" restore
 ```
 
+On Linux:
+
+```bash
+p=$(ls -d ~/.claude/plugins/cache/vslipchenko/sessions/*/ | sort -V | tail -1)
+python3 "$p/scripts/sessions.py" restore
+```
+
 Commands: `list`, `save -Ids <id,...> [-Force]`, `snapshots`,
-`restore [-Ids <id,...>] [-UseShell gitbash|pwsh|powershell|cmd] [-Terminal wt|window] [-DryRun]`,
+`restore [-Ids <id,...>] [-UseShell <shell>] [-Terminal <terminal>] [-DryRun]`,
 `config [-UseShell ...] [-Terminal ...] [-Reset]`.
 
 ## License
