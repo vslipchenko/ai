@@ -9,7 +9,7 @@
                to recently modified transcripts if that registry is unavailable.
                Each live session also records the shell it was started from
                (gitbash / pwsh / powershell / cmd) and, when detectable, its window
-               program (wt / mintty / vscode / jetbrains).
+               program (wt / console / mintty / vscode / jetbrains).
     save       Write a snapshot of the sessions named in -Ids to <DataDir>\snapshots,
                replacing the previous one. Refuses (error unrestored-snapshot) while
                the previous one has sessions not yet restored, unless -Force.
@@ -272,7 +272,16 @@ function Get-LaunchInfo([int]$procId) {
                 '^powershell\.exe$' { $shell = 'powershell' }
                 '^cmd\.exe$' { $shell = 'cmd' }
             }
-            if ($shell) { $info.shell = $shell; $info.shellPath = $path }
+            if ($shell) {
+                $info.shell = $shell; $info.shellPath = $path
+                # A shell in a standalone console window (conhost) owns a visible window;
+                # inside Windows Terminal, an editor or mintty (pseudo-console) it does not.
+                # Checked first: such a window may have been started from a Windows Terminal tab.
+                if ($shell -ne 'gitbash') {
+                    $sp = Get-Process -Id $parentId -ErrorAction SilentlyContinue
+                    if ($sp -and $sp.MainWindowHandle -ne [IntPtr]::Zero) { $info.host = 'console'; break }
+                }
+            }
             continue
         }
         $hostName = $null
@@ -559,12 +568,44 @@ function Get-ShellAvailability {
     if (-not $cmd -or -not (Test-Path -LiteralPath $cmd)) { $cmd = Join-Path $wsRoot 'System32\cmd.exe' }
     $pwsh = $null
     if (-not $PowerShellExe) { $pwsh = Resolve-Exe $null @('pwsh') }
+    $conhost = Join-Path $wsRoot 'System32\conhost.exe'
+    if (-not (Test-Path -LiteralPath $conhost)) { $conhost = $null }
     return @{
         pwsh       = $pwsh
         powershell = $ps
         cmd        = $cmd
         wt         = [bool](Get-Command wt -ErrorAction SilentlyContinue)
+        conhost    = $conhost
     }
+}
+
+# Opens a console program in a classic console window even when Windows is set to
+# hand console apps to Windows Terminal; falls back to a plain start.
+function Set-WindowLaunch($spec, [string]$exe, [string]$argLine) {
+    if ($script:Avail.conhost) {
+        $spec.exe = $script:Avail.conhost
+        $spec.args = '"' + $exe + '" ' + $argLine
+    } else {
+        $spec.exe = $exe
+        $spec.args = $argLine
+    }
+}
+
+# Claude Code marks the shells it runs tools in as belonging to its session
+# (CLAUDE_CODE_CHILD_SESSION, CLAUDE_CODE_SESSION_ID, messaging socket, ...).
+# A restored session inheriting them would think it is a child of the session
+# running `restore` and turn transcript saving off, so drop them before launching.
+# Variables the user set at User/Machine level are kept.
+function Clear-ClaudeSessionEnv {
+    $rx = '^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|AI_AGENT|CLAUDE_CODE_(CHILD_SESSION|SESSION_.+|SESSION|MESSAGING_.+|ENTRYPOINT|EXECPATH|SSE_PORT|IDE_.+))$'
+    $removed = @()
+    foreach ($item in @(Get-ChildItem Env:)) {
+        if ($item.Name -notmatch $rx) { continue }
+        if ([Environment]::GetEnvironmentVariable($item.Name, 'User') -or [Environment]::GetEnvironmentVariable($item.Name, 'Machine')) { continue }
+        Remove-Item -LiteralPath "Env:$($item.Name)" -ErrorAction SilentlyContinue
+        $removed += $item.Name
+    }
+    return , $removed
 }
 
 # Decide shell + terminal for one session. Tries the wanted shell, then
@@ -603,7 +644,9 @@ function Resolve-LaunchTarget($item, $avail, [string]$shellPref, [string]$termPr
             }
             $term = $termPref
             if (-not $term -or $term -eq 'auto') {
-                if ($avail.wt) { $term = 'wt' } else { $term = 'window' }
+                # Standalone console window stays one; everything else prefers Windows Terminal.
+                if ($savedHost -eq 'console' -and $savedShell -eq $shell) { $term = 'window' }
+                elseif ($avail.wt) { $term = 'wt' } else { $term = 'window' }
             }
             if ($term -eq 'wt' -and -not $avail.wt) { $notes += 'Windows Terminal not found'; $term = 'window' }
             $target = @{ shell = $shell; terminal = $term; exe = $exe }
@@ -654,8 +697,7 @@ function New-LaunchSpec($target, [string]$sid, [string]$cwd, [string]$title, [st
                 if ($dir.EndsWith('\')) { $dir += '.' }
                 $spec.wtTab = ('--title "{0}" -d "{1}" "{2}" /k {3}' -f $t, $dir, $target.exe, $inner) -replace ';', '\;'
             } else {
-                $spec.exe = $target.exe
-                $spec.args = "/k $inner"
+                Set-WindowLaunch $spec $target.exe "/k $inner"
             }
         }
         default {
@@ -665,8 +707,7 @@ function New-LaunchSpec($target, [string]$sid, [string]$cwd, [string]$title, [st
             if ($target.terminal -eq 'wt') {
                 $spec.wtTab = '--title "{0}" "{1}" -NoExit -EncodedCommand {2}' -f $t, $target.exe, $enc
             } else {
-                $spec.exe = $target.exe
-                $spec.args = "-NoExit -EncodedCommand $enc"
+                Set-WindowLaunch $spec $target.exe "-NoExit -EncodedCommand $enc"
             }
         }
     }
@@ -717,6 +758,7 @@ function Invoke-Restore {
     $termPref = $Terminal
     if (-not $termPref) { $termPref = $cfg.restoreTerminal }
     $avail = Get-ShellAvailability
+    $script:Avail = $avail
 
     $live = Get-LiveSessions $true
     $liveIds = @{}
@@ -752,7 +794,9 @@ function Invoke-Restore {
         $launch += $row
     }
 
+    $clearedEnv = @()
     if (-not $DryRun) {
+        if ($launch.Count -gt 0) { $clearedEnv = Clear-ClaudeSessionEnv }
         $wtRows = @($launch | Where-Object { $_.terminal -eq 'wt' })
         # One Windows Terminal window per 10 tabs keeps the command line well under the 32K limit.
         for ($i = 0; $i -lt $wtRows.Count; $i += 10) {
@@ -788,6 +832,7 @@ function Invoke-Restore {
             dryRun   = [bool]$DryRun
             launched = $launch
             skipped  = $skipped
+            clearedEnv = $clearedEnv
         })
 }
 

@@ -42,7 +42,8 @@ tell — the window it was in:
 |---|---|
 | Git Bash (its own window) | a Git Bash window |
 | Git Bash inside Windows Terminal | a Windows Terminal tab running Git Bash |
-| PowerShell 7 / Windows PowerShell / cmd | a Windows Terminal tab (all in one window), or its own console window without Windows Terminal |
+| PowerShell 7 / Windows PowerShell / cmd in a standalone console window | a standalone console window with the same shell |
+| PowerShell 7 / Windows PowerShell / cmd in Windows Terminal | a Windows Terminal tab (all in one window), or a console window without Windows Terminal |
 | VS Code / JetBrains terminal | a Windows Terminal tab with the same shell (editor terminals can't be opened from outside) |
 | unknown (e.g. sessions saved by version 1.0.0) | Windows PowerShell |
 
@@ -74,6 +75,10 @@ and can be cleared any time.
   can't wipe what you meant to restore. A default shell, if you set one, is kept
   next to it in `config.json`. Uninstalling the plugin deletes the folder unless
   you pass `--keep-data`.
+- **Clean start.** Restored sessions are fully independent: the markers Claude
+  Code gives to processes started from inside a session (child-session flag,
+  session id, messaging socket) are removed before launching, so each resumed
+  session keeps saving its own transcript.
 - **Restoring.** Sessions that are already open are skipped, as are sessions
   whose folder or conversation no longer exists, and you're told which and why.
 

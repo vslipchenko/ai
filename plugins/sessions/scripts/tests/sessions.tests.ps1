@@ -87,6 +87,28 @@ try {
     $sdk = @($r.sessions | Where-Object { $_.sessionId -eq $B })[0]
     Assert ($sdk.title -eq 'reg-bbbb') 'falls back to registry name without transcript'
     Assert ($sdk.shell -eq 'powershell' -and $sdk.shellPath -like '*powershell.exe') 'detects the shell a session was started from'
+    Assert ($null -eq $sdk.host) 'hidden window is not taken for a console window'
+
+    # A "claude" (here: powershell) started from cmd in a standalone console window.
+    $H = '99999999-0000-4000-8000-000000000009'
+    $home3 = Join-Path $root 'claude3'
+    $con = Start-Process "$env:SystemRoot\System32\conhost.exe" -ArgumentList 'cmd.exe /c powershell.exe -NoProfile -Command Start-Sleep 60' -WindowStyle Minimized -PassThru
+    $inner = $null
+    for ($i = 0; $i -lt 30 -and -not $inner; $i++) {
+        Start-Sleep -Milliseconds 200
+        $cmdP = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($con.Id) AND Name='cmd.exe'"
+        if ($cmdP) { $inner = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($cmdP.ProcessId) AND Name='powershell.exe'" }
+    }
+    try {
+        Write-Registry $home3 $inner.ProcessId $H $projA ((Get-Process -Id $inner.ProcessId).StartTime.ToFileTimeUtc().ToString()) 'interactive'
+        $r = Run @('list', '-ClaudeHome', $home3)
+        $conSession = @($r.sessions)[0]
+        Assert ($conSession.sessionId -eq $H -and $conSession.shell -eq 'cmd' -and $conSession.host -eq 'console') 'detects a standalone console window'
+    } finally {
+        Stop-Process -Id $con.Id -ErrorAction SilentlyContinue
+        if ($inner) { Stop-Process -Id $inner.ProcessId -ErrorAction SilentlyContinue }
+        if ($cmdP) { Stop-Process -Id $cmdP.ProcessId -ErrorAction SilentlyContinue }
+    }
 
     Write-Host 'save'
     $r = Run @('save', '-ClaudeHome', $home1, '-DataDir', $data, '-Ids', "$A,$E,$U")
@@ -227,6 +249,14 @@ try {
     Assert ($p.shell -eq 'powershell' -and $p.fallback -like '*pwsh not found*') 'pwsh missing -> Windows PowerShell'
     $p = Plan @{ shell = 'cmd' } @('-Terminal', 'window')
     Assert ($p.shell -eq 'cmd' -and $p.terminal -eq 'window' -and $p.command -eq "/k $claudeX --resume $E") 'cmd session -> cmd /k resume'
+    $p = Plan @{ shell = 'powershell'; host = 'console' } @()
+    Assert ($p.shell -eq 'powershell' -and $p.terminal -eq 'window') 'console-window session -> console window'
+    if ($hasWt) {
+        $p = Plan @{ shell = 'powershell'; host = 'wt' } @()
+        Assert ($p.terminal -eq 'wt') 'Windows Terminal session -> wt tab'
+        $p = Plan @{ shell = 'powershell'; host = $null } @()
+        Assert ($p.terminal -eq 'wt') 'unknown window -> wt tab'
+    }
     $p = Plan @{ shell = 'gitbash' } @('-UseShell', 'cmd')
     Assert ($p.shell -eq 'cmd') '-UseShell overrides the saved shell'
 
@@ -261,7 +291,10 @@ class FakeClaude {
   [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
   [DllImport("kernel32.dll")] static extern bool TerminateProcess(IntPtr h, uint code);
   static void Main(string[] args) {
-    File.AppendAllText(@"$marker", Directory.GetCurrentDirectory() + "|" + string.Join(" ", args) + "\n");
+    var leaked = new List<string>();
+    foreach (string v in new[] { "CLAUDE_CODE_CHILD_SESSION", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET" })
+      if (Environment.GetEnvironmentVariable(v) != null) leaked.Add(v);
+    File.AppendAllText(@"$marker", Directory.GetCurrentDirectory() + "|" + string.Join(" ", args) + "|" + string.Join(",", leaked) + "\n");
     var shells = new List<int>();
     int pid = System.Diagnostics.Process.GetCurrentProcess().Id;
     for (int i = 0; i < 8; i++) {
@@ -288,6 +321,9 @@ class FakeClaude {
             $cases += @{ shell = 'gitbash'; term = 'window' }
             if ($hasWt) { $cases += @{ shell = 'gitbash'; term = 'wt' } }
         }
+        # What a Claude Code tool shell passes down; none of it may reach a restored session.
+        $env:CLAUDE_CODE_CHILD_SESSION = '1'; $env:CLAUDECODE = '1'
+        $env:CLAUDE_CODE_SESSION_ID = 'parent'; $env:CLAUDE_CODE_MESSAGING_SOCKET = 'pipe'
         foreach ($c in $cases) {
             if (Test-Path $marker) { Remove-Item $marker }
             $null = Run @('restore', '-ClaudeHome', $home1, '-DataDir', $data, '-ClaudeExe', $fake,
@@ -296,7 +332,7 @@ class FakeClaude {
             while (-not (Test-Path $marker) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }
             Start-Sleep -Milliseconds 300
             $got = if (Test-Path $marker) { (Get-Content $marker -Raw).Trim() } else { '' }
-            Assert ($got -eq "$projA|--resume $E") "real launch: $($c.shell) in $($c.term) resumes in the right folder"
+            Assert ($got -eq "$projA|--resume $E|") "real launch: $($c.shell) in $($c.term) resumes in the right folder, no Claude session markers ($got)"
         }
         $after = Get-Content -Raw (Join-Path $snapDir 'snapshot-29990101-000000.json') | ConvertFrom-Json
         Assert ($after.restoredAt -and @($after.restoredSessionIds) -contains $E -and @($after.settledSessionIds) -contains $E) 'real restore marks the snapshot'

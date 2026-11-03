@@ -10,8 +10,9 @@ Reopen the sessions from a snapshot made by `save`, each running
 
 - **Git Bash** → a Git Bash (mintty) window, or a Windows Terminal tab if it
   ran inside Windows Terminal;
-- **PowerShell 7 / Windows PowerShell / cmd** → a Windows Terminal tab (one
-  window for all of them), or its own console window without Windows Terminal;
+- **PowerShell 7 / Windows PowerShell / cmd** → a standalone console window if
+  it ran in one; otherwise a Windows Terminal tab (one window for all of them),
+  or a console window without Windows Terminal;
 - **unknown** (older snapshots) → Windows PowerShell.
 
 If the saved shell is no longer installed, the session still opens — in

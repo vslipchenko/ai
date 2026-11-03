@@ -31,7 +31,7 @@ carries `error` and `message` — report the message and stop.
 
 Result: `sessions[]` with `sessionId`, `cwd`, `title`, `lastPrompt`,
 `isCurrent`, `shell` (`gitbash` / `pwsh` / `powershell` / `cmd` / null) and
-`host` (`wt` / `mintty` / `vscode` / `jetbrains` / null), plus `source`,
+`host` (`wt` / `console` / `mintty` / `vscode` / `jetbrains` / null), plus `source`,
 `hiddenNonInteractive` and `pendingSnapshot`. `shell` and `host` are stored
 with the snapshot so `restore` reopens each session in the same kind of
 terminal.

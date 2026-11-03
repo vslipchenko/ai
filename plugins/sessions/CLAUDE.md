@@ -28,6 +28,14 @@
     `Git\bin\bash.exe`. `;` is escaped as `\;` for `wt`.
   - cmd: `/k <exe> --resume <id>` with at most one pair of quotes (prefer the
     8.3 short path); `wt` re-tokenizes, so nested `""…""` quoting breaks there.
+- `restore` runs inside a Claude session, whose tool shells carry session
+  markers (`CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_SESSION_ID`, messaging
+  socket/token, `CLAUDECODE`, ...). `Clear-ClaudeSessionEnv` must drop them
+  before any launch, or resumed sessions turn transcript saving off. The
+  `-Launch` tests assert no marker reaches the launched process.
+- A shell owning a visible window (`MainWindowHandle` ≠ 0) is in a standalone
+  console window → host `console`, restored via `conhost.exe <shell>` so it stays
+  a classic window even when Windows hands consoles to Windows Terminal.
 - Shell detection walks parent processes (`Get-LaunchInfo`). Git Bash's chain
   usually ends before mintty (msys re-launches bash), so `host = null` +
   `gitbash` restores to mintty. Restore must always fall back
