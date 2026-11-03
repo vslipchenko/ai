@@ -1,6 +1,6 @@
 ---
 name: restore
-description: Reopen Claude Code sessions saved earlier with the `save` skill — each resumed in its original folder (`claude --resume <id>`) and in the same kind of terminal it ran in (Git Bash, PowerShell, cmd), falling back to PowerShell or cmd if that terminal is gone. Use when the user wants to restore / reopen / bring back / resume their saved Claude sessions or terminals, e.g. "restore my sessions", "reopen the sessions I saved before the reboot", "restore yesterday's sessions", "restore them all in Git Bash", or to set how sessions are restored ("always restore in Git Bash"). Windows only.
+description: Reopen Claude Code sessions saved earlier with the `save` skill — each resumed in its original folder (`claude --resume <id>`) and in the same kind of terminal it ran in (Git Bash, PowerShell, cmd), falling back to PowerShell or cmd if that terminal is gone. Use when the user wants to restore / reopen / bring back / resume their saved Claude sessions or terminals, e.g. "restore my sessions", "reopen the sessions I saved before the reboot", "restore them all in Git Bash", or to set how sessions are restored ("always restore in Git Bash"). Windows only.
 ---
 
 # Sessions — Restore
@@ -48,41 +48,38 @@ Precedence: per-run options → saved default → what each session ran in.
   `config` alone shows the current defaults. Confirm the new default in one
   line. If the user only asked to change the default, stop there.
 
-## Step 1 — Pick the snapshot
+## Step 1 — Pick sessions (only if asked)
+
+Only one snapshot is kept (each `save` replaces the previous one), so there is
+nothing to choose between: restore it. Restore every session in it unless the
+user asked to choose. If they did, read the snapshot first:
 
 ```
 ... snapshots -DataDir "${CLAUDE_PLUGIN_DATA}"
 ```
 
-Result: `snapshots[]`, newest first, each with `file`, `createdAt`,
-`restoredAt`, `count`, `sessions[]` (`sessionId`, `title`, `cwd`, `lastPrompt`).
+Result: `snapshots[]` (normally one) with `createdAt`, `restoredAt`, `count`,
+`pending`, `sessions[]` (`sessionId`, `title`, `cwd`, `lastPrompt`). Ask with
+`multiSelect` options (label = title, description = folder), split across
+questions of up to 4 options as in the `save` skill, and pass the chosen ids
+with `-Ids`.
 
-- Default: the newest snapshot. Don't ask.
-- If the user described another one ("yesterday's", "the one before"), match
-  it by `createdAt` (shown in the user's local time); if that's ambiguous, ask
-  with a single-select question listing the candidates.
-- If the chosen snapshot already has `restoredAt`, mention when — but still go
-  ahead; sessions that are already open are skipped automatically, so nothing
-  is opened twice.
+If the user asks for an older set of sessions, explain that only the most
+recent save is kept.
 
-## Step 2 — Pick sessions (only if asked)
-
-Restore every session in the snapshot unless the user asked to choose. If they
-did, ask with `multiSelect` options (label = title, description = folder), split
-across questions of up to 4 options as in the `save` skill, and pass the chosen
-ids with `-Ids`.
-
-## Step 3 — Restore
+## Step 2 — Restore
 
 ```
-... restore -DataDir "${CLAUDE_PLUGIN_DATA}" [-Snapshot <file>] [-Ids <id1>,<id2>,...] [-UseShell <shell>] [-Terminal <wt|window>]
+... restore -DataDir "${CLAUDE_PLUGIN_DATA}" [-Ids <id1>,<id2>,...] [-UseShell <shell>] [-Terminal <wt|window>]
 ```
 
 Result: `launched[]` and `skipped[]` (each with `sessionId`, `title`, `cwd`).
 Launched rows also carry `shell`, `terminal` (`wt` = Windows Terminal tab,
 `window` = own window), `savedShell` and `fallback` (null, or why a different
-shell or terminal was used); skipped rows carry `reason`. The snapshot is
-marked as restored.
+shell or terminal was used); skipped rows carry `reason`. Sessions that are
+already open are skipped, so restoring twice never opens duplicates. The
+snapshot records which sessions were dealt with; once all are, the next `save`
+replaces it without asking.
 
 Report in plain text:
 - what was opened, as `title — folder — shell, Windows Terminal tab / window`;

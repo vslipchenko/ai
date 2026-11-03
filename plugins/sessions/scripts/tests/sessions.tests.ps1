@@ -104,9 +104,50 @@ try {
     $r = Run @('save', '-ClaudeHome', $home1, '-DataDir', $data, '-Ids', $U)
     Assert ($r.ok -eq $false -and $r.error -eq 'nothing-saved') 'fails when nothing can be saved'
 
-    $pr = Join-Path $root 'prune'
-    1..3 | ForEach-Object { $null = Run @('save', '-ClaudeHome', $home1, '-DataDir', $pr, '-Ids', $A, '-Keep', '2') }
-    Assert (@(Get-ChildItem (Join-Path $pr 'snapshots') -Filter 'snapshot-*.json').Count -eq 2) 'keeps only -Keep newest snapshots'
+    Write-Host 'save: one snapshot, unrestored ones protected'
+    $one = Join-Path $root 'one'
+    $oneSnaps = Join-Path $one 'snapshots'
+    function Count-Snaps { @(Get-ChildItem $oneSnaps -Filter 'snapshot-*.json').Count }
+    function Write-OneSnap([string]$name, $extra) {
+        $s = [ordered]@{ version = 1; createdAt = '2026-01-01T00:00:00Z'; restoredAt = $null; restoredSessionIds = @()
+            sessions = @([ordered]@{ sessionId = $A; cwd = $projA; title = 'a' }, [ordered]@{ sessionId = $E; cwd = $projA; title = 'e' }) }
+        foreach ($k in $extra.Keys) { $s[$k] = $extra[$k] }
+        Write-Utf8 (Join-Path $oneSnaps $name) (ConvertTo-Json $s -Depth 5)
+    }
+
+    $r = Run @('save', '-ClaudeHome', $home1, '-DataDir', $one, '-Ids', $A)
+    Assert ($r.ok -and $r.replaced -eq 0) 'first save writes the snapshot'
+    $r = Run @('save', '-ClaudeHome', $home1, '-DataDir', $one, '-Ids', $E)
+    Assert ($r.ok -eq $false -and $r.error -eq 'unrestored-snapshot' -and @($r.pendingSnapshot.pending).Count -eq 1 -and $r.pendingSnapshot.pending[0].sessionId -eq $A) 'refuses to replace an unrestored snapshot'
+    Assert ((Count-Snaps) -eq 1) 'refused save leaves the snapshot alone'
+    $r = Run @('list', '-ClaudeHome', $home1, '-DataDir', $one)
+    Assert ($r.ok -and $r.pendingSnapshot -and $r.pendingSnapshot.pending[0].title) 'list reports the unrestored snapshot'
+    $r = Run @('save', '-ClaudeHome', $home1, '-DataDir', $one, '-Ids', $E, '-Force')
+    Assert ($r.ok -and $r.replaced -eq 1 -and (Count-Snaps) -eq 1) '-Force replaces it, one snapshot left'
+
+    Get-ChildItem $oneSnaps | Remove-Item
+    Write-OneSnap 'snapshot-20260101-000000.json' @{ restoredAt = '2026-01-01T01:00:00Z'; settledSessionIds = @($A, $E) }
+    $r = Run @('save', '-ClaudeHome', $home1, '-DataDir', $one, '-Ids', $A)
+    Assert ($r.ok -and $r.replaced -eq 1 -and (Count-Snaps) -eq 1) 'fully restored snapshot is replaced silently'
+    Get-ChildItem $oneSnaps | Remove-Item
+    Write-OneSnap 'snapshot-20260101-000000.json' @{ restoredAt = '2026-01-01T01:00:00Z'; settledSessionIds = @($A) }
+    $r = Run @('save', '-ClaudeHome', $home1, '-DataDir', $one, '-Ids', $A)
+    Assert ($r.ok -eq $false -and @($r.pendingSnapshot.pending).Count -eq 1 -and $r.pendingSnapshot.pending[0].sessionId -eq $E) 'partly restored snapshot protects the rest'
+
+    Get-ChildItem $oneSnaps | Remove-Item
+    1..3 | ForEach-Object { Write-OneSnap "snapshot-2026010$_-000000.json" @{ restoredAt = '2026-01-01T01:00:00Z' } }
+    $r = Run @('save', '-ClaudeHome', $home1, '-DataDir', $one, '-Ids', $A)
+    Assert ($r.ok -and $r.replaced -eq 3 -and (Count-Snaps) -eq 1) 'older restored snapshots (earlier format) are cleaned up'
+
+    # A restore where every session is either open or gone settles the snapshot without opening anything.
+    Get-ChildItem $oneSnaps | Remove-Item
+    $s = [ordered]@{ version = 1; createdAt = '2026-01-01T00:00:00Z'; restoredAt = $null; restoredSessionIds = @(); settledSessionIds = @()
+        sessions = @([ordered]@{ sessionId = $A; cwd = $projA; title = 'a' }, [ordered]@{ sessionId = $F; cwd = (Join-Path $root 'gone'); title = 'f' }) }
+    Write-Utf8 (Join-Path $oneSnaps 'snapshot-20260101-000000.json') (ConvertTo-Json $s -Depth 5)
+    $r = Run @('restore', '-ClaudeHome', $home1, '-DataDir', $one, '-ClaudeExe', 'C:\x\claude.exe')
+    Assert ($r.ok -and @($r.launched).Count -eq 0 -and @($r.skipped).Count -eq 2) 'restore with nothing to open'
+    $r = Run @('save', '-ClaudeHome', $home1, '-DataDir', $one, '-Ids', $A)
+    Assert ($r.ok -and (Count-Snaps) -eq 1) 'sessions that are open or gone count as settled'
 
     Write-Host 'snapshots'
     $r = Run @('snapshots', '-ClaudeHome', $home1, '-DataDir', $data)
@@ -258,7 +299,7 @@ class FakeClaude {
             Assert ($got -eq "$projA|--resume $E") "real launch: $($c.shell) in $($c.term) resumes in the right folder"
         }
         $after = Get-Content -Raw (Join-Path $snapDir 'snapshot-29990101-000000.json') | ConvertFrom-Json
-        Assert ($after.restoredAt -and @($after.restoredSessionIds) -contains $E) 'real restore marks the snapshot'
+        Assert ($after.restoredAt -and @($after.restoredSessionIds) -contains $E -and @($after.settledSessionIds) -contains $E) 'real restore marks the snapshot'
     }
 } finally {
     Stop-Process -Id $helper.Id -ErrorAction SilentlyContinue

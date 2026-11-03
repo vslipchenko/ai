@@ -1,6 +1,6 @@
 ---
 name: save
-description: Save the currently open Claude Code terminal sessions (session id + folder) so they can be reopened after a reboot with the `restore` skill. Lists the live sessions and lets the user pick which to keep. Use when the user wants to save / snapshot / remember / bookmark their open Claude sessions or terminals, e.g. "save my sessions", "I need to reboot, save my claude sessions", "snapshot my open terminals before restart". Windows only.
+description: Save the currently open Claude Code terminal sessions (session id + folder + shell) so they can be reopened after a reboot with the `restore` skill. Lists the live sessions and lets the user pick which to keep; replaces the previously saved set (asking first if it was never restored). Use when the user wants to save / snapshot / remember / bookmark their open Claude sessions or terminals, e.g. "save my sessions", "I need to reboot, save my claude sessions", "snapshot my open terminals before restart". Windows only.
 ---
 
 # Sessions — Save
@@ -26,15 +26,26 @@ carries `error` and `message` — report the message and stop.
 ## Step 1 — List live sessions
 
 ```
-... list -CurrentSessionId "${CLAUDE_SESSION_ID}"
+... list -DataDir "${CLAUDE_PLUGIN_DATA}" -CurrentSessionId "${CLAUDE_SESSION_ID}"
 ```
 
 Result: `sessions[]` with `sessionId`, `cwd`, `title`, `lastPrompt`,
 `isCurrent`, `shell` (`gitbash` / `pwsh` / `powershell` / `cmd` / null) and
-`host` (`wt` / `mintty` / `vscode` / `jetbrains` / null), plus `source` and
-`hiddenNonInteractive`. `shell` and `host` are stored with the snapshot so
-`restore` reopens each session in the same kind of terminal.
+`host` (`wt` / `mintty` / `vscode` / `jetbrains` / null), plus `source`,
+`hiddenNonInteractive` and `pendingSnapshot`. `shell` and `host` are stored
+with the snapshot so `restore` reopens each session in the same kind of
+terminal.
 
+Only one snapshot is kept: saving replaces the previous one. When the previous
+one still has sessions that were never restored, `pendingSnapshot` describes it
+(`createdAt`, `count`, `pending[]` with `title` and `cwd`); otherwise it is null.
+
+- `pendingSnapshot` set → **before anything else**, ask one single-select
+  question (header `Replace?`): "Your saved sessions from <createdAt in local
+  time> haven't all been restored yet (<pending titles>). Saving now replaces
+  them." Options: `Replace them` / `Cancel`. On Cancel, save nothing and suggest
+  restoring them first (the `restore` skill), then stop. On Replace, add
+  `-Force` to the save in Step 3.
 - No sessions → say so and stop.
 - `source` is `transcripts` → the live-session list was unavailable; tell the
   user these are sessions **active in the last 12 hours**, some possibly closed.
@@ -68,11 +79,14 @@ is selected, save nothing and say so.
 ## Step 3 — Save
 
 ```
-... save -DataDir "${CLAUDE_PLUGIN_DATA}" -Ids <id1>,<id2>,...
+... save -DataDir "${CLAUDE_PLUGIN_DATA}" -Ids <id1>,<id2>,... [-Force]
 ```
 
-Result: `snapshot` (file path), `saved[]`, `missing[]`, `pruned`. Snapshots
-are timestamped; only the newest 20 are kept.
+Result: `snapshot` (file path), `saved[]`, `missing[]`, `replaced` (number of
+older snapshot files removed). Without `-Force` the script refuses to replace a
+snapshot with unrestored sessions (`error: unrestored-snapshot`, plus
+`pendingSnapshot`): if that happens, ask the Step 1 question and retry with
+`-Force` only if the user chooses Replace.
 
 Report in plain text:
 - how many sessions were saved, listed as `title — folder (shell)`;

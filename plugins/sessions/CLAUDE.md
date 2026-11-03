@@ -6,7 +6,12 @@
 - `skills/save/SKILL.md`, `skills/restore/SKILL.md` — interaction only (listing,
   asking, reporting).
 - `scripts/sessions.ps1` — all discovery, snapshot I/O and terminal launching.
-  Subcommands `list | save | snapshots | restore`; one JSON line on stdout.
+  Subcommands `list | save | snapshots | restore | config`; one JSON line on stdout.
+- Exactly one snapshot is kept. `save` deletes all others after writing, but
+  refuses (`unrestored-snapshot`) while the previous one has pending sessions
+  (not in `settledSessionIds`) unless `-Force`. `restore` settles launched
+  sessions and permanently skipped ones (everything except `no-shell`).
+  Snapshots without `settledSessionIds` count as settled once `restoredAt` is set.
 - `scripts/tests/sessions.tests.ps1` — self-contained tests (no Pester).
 
 ## Rules

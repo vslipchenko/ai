@@ -10,8 +10,10 @@
                Each live session also records the shell it was started from
                (gitbash / pwsh / powershell / cmd) and, when detectable, its window
                program (wt / mintty / vscode / jetbrains).
-    save       Write a snapshot of the sessions named in -Ids to <DataDir>\snapshots.
-    snapshots  Summarise stored snapshots, newest first.
+    save       Write a snapshot of the sessions named in -Ids to <DataDir>\snapshots,
+               replacing the previous one. Refuses (error unrestored-snapshot) while
+               the previous one has sessions not yet restored, unless -Force.
+    snapshots  Summarise the stored snapshot (normally just one).
     restore    Reopen each session of a snapshot with `claude --resume <id>` in its
                folder, in the shell it ran in. If that shell is missing, falls back
                to PowerShell 7, Windows PowerShell, then cmd.
@@ -40,8 +42,8 @@ param(
     [switch]$IncludeNonInteractive,
     [switch]$DryRun,
 
-    # Snapshots kept after a save; older ones are deleted.
-    [int]$Keep = 20,
+    # save: replace the snapshot even if it has sessions that were never restored.
+    [switch]$Force,
 
     # Transcript fallback window for `list` when the live-session registry is unavailable.
     [int]$SinceHours = 12,
@@ -80,8 +82,10 @@ function Write-Result($obj) {
     [Console]::Out.WriteLine((ConvertTo-Json -InputObject $obj -Depth 8 -Compress))
 }
 
-function Stop-WithError([string]$code, [string]$message) {
-    Write-Result ([ordered]@{ ok = $false; error = $code; message = $message })
+function Stop-WithError([string]$code, [string]$message, $extra = @{}) {
+    $r = [ordered]@{ ok = $false; error = $code; message = $message }
+    foreach ($k in $extra.Keys) { $r[$k] = $extra[$k] }
+    Write-Result $r
     exit 1
 }
 
@@ -348,13 +352,52 @@ function Get-LiveSessions([bool]$includeNonInteractive) {
 
 # ---------------------------------------------------------------- commands
 
+function Get-SnapshotFiles($data) {
+    return @(Get-ChildItem -LiteralPath $data.snapshots -Filter 'snapshot-*.json' -File | Sort-Object Name -Descending)
+}
+
+# Sessions of a snapshot that a restore hasn't dealt with yet. A session counts as
+# settled once restore opened it or found it can never be opened (already running,
+# folder or conversation gone). Snapshots from before settledSessionIds existed
+# count as fully settled once restoredAt is set.
+function Get-PendingSessions($snap) {
+    $items = @(Get-Prop $snap 'sessions')
+    $settledProp = $snap.PSObject.Properties['settledSessionIds']
+    if (-not $settledProp) {
+        if (Get-Prop $snap 'restoredAt') { return , @() }
+        return , $items
+    }
+    $settled = @($settledProp.Value | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() })
+    return , @($items | Where-Object { $settled -notcontains ([string](Get-Prop $_ 'sessionId')).ToLowerInvariant() })
+}
+
+# The snapshot that would be replaced, if it still holds sessions not yet restored.
+function Get-PendingSnapshot($data) {
+    foreach ($f in (Get-SnapshotFiles $data)) {
+        $o = Read-JsonFile $f.FullName
+        if (-not $o) { continue }
+        $pending = Get-PendingSessions $o
+        if ($pending.Count -eq 0) { continue }
+        return [ordered]@{
+            file      = $f.Name
+            createdAt = Get-Prop $o 'createdAt'
+            count     = @(Get-Prop $o 'sessions').Count
+            pending   = @($pending | ForEach-Object { [ordered]@{
+                        sessionId = (Get-Prop $_ 'sessionId'); title = (Get-Prop $_ 'title'); cwd = (Get-Prop $_ 'cwd') } })
+        }
+    }
+    return $null
+}
+
 function Invoke-List {
     $r = Get-LiveSessions ([bool]$IncludeNonInteractive)
+    $data = Resolve-DataDir
     Write-Result ([ordered]@{
             ok                   = $true
             source               = $r.source
             sessions             = $r.sessions
             hiddenNonInteractive = $r.hiddenNonInteractive
+            pendingSnapshot      = Get-PendingSnapshot $data
         })
 }
 
@@ -385,24 +428,26 @@ function Invoke-Save {
     }
     if ($saved.Count -eq 0) { Stop-WithError 'nothing-saved' 'None of the given sessions could be found.' }
 
+    # Only one snapshot is kept. Never replace one with sessions still waiting to be restored unless told to.
+    $pendingSnap = Get-PendingSnapshot $data
+    if ($pendingSnap -and -not $Force) {
+        Stop-WithError 'unrestored-snapshot' "The snapshot from $($pendingSnap.createdAt) still has $($pendingSnap.pending.Count) session(s) that were never restored. Pass -Force to replace it." @{ pendingSnapshot = $pendingSnap }
+    }
+
     $now = Get-Date
-    $base = 'snapshot-' + $now.ToString('yyyyMMdd-HHmmss')
-    $path = Join-Path $data.snapshots "$base.json"
-    $n = 2
-    while (Test-Path -LiteralPath $path) { $path = Join-Path $data.snapshots "$base-$n.json"; $n++ }
+    $path = Join-Path $data.snapshots ('snapshot-' + $now.ToString('yyyyMMdd-HHmmss') + '.json')
     Write-JsonFile $path ([ordered]@{
             version            = 1
             createdAt          = $now.ToUniversalTime().ToString('o')
             restoredAt         = $null
             restoredSessionIds = @()
+            settledSessionIds  = @()
             sessions           = $saved
         })
 
-    $pruned = 0
-    if ($Keep -gt 0) {
-        $old = @(Get-ChildItem -LiteralPath $data.snapshots -Filter 'snapshot-*.json' -File |
-            Sort-Object Name -Descending | Select-Object -Skip $Keep)
-        foreach ($f in $old) { Remove-Item -LiteralPath $f.FullName -Force; $pruned++ }
+    $replaced = 0
+    foreach ($f in (Get-SnapshotFiles $data)) {
+        if ($f.FullName -ne $path) { Remove-Item -LiteralPath $f.FullName -Force; $replaced++ }
     }
 
     Write-Result ([ordered]@{
@@ -412,12 +457,8 @@ function Invoke-Save {
             dataDirFallback = $data.fallback
             saved           = $saved
             missing         = $missing
-            pruned          = $pruned
+            replaced        = $replaced
         })
-}
-
-function Get-SnapshotFiles($data) {
-    return @(Get-ChildItem -LiteralPath $data.snapshots -Filter 'snapshot-*.json' -File | Sort-Object Name -Descending)
 }
 
 function Invoke-Snapshots {
@@ -432,6 +473,7 @@ function Invoke-Snapshots {
             createdAt  = Get-Prop $o 'createdAt'
             restoredAt = Get-Prop $o 'restoredAt'
             count      = $items.Count
+            pending    = (Get-PendingSessions $o).Count
             sessions   = @($items | ForEach-Object { [ordered]@{
                         sessionId = (Get-Prop $_ 'sessionId'); title = (Get-Prop $_ 'title'); cwd = (Get-Prop $_ 'cwd')
                         lastPrompt = (Get-Prop $_ 'lastPrompt') } })
@@ -710,7 +752,7 @@ function Invoke-Restore {
         $launch += $row
     }
 
-    if (-not $DryRun -and $launch.Count -gt 0) {
+    if (-not $DryRun) {
         $wtRows = @($launch | Where-Object { $_.terminal -eq 'wt' })
         # One Windows Terminal window per 10 tabs keeps the command line well under the 32K limit.
         for ($i = 0; $i -lt $wtRows.Count; $i += 10) {
@@ -722,14 +764,22 @@ function Invoke-Restore {
             Start-Window $specs[$row.sessionId] $row.cwd
         }
 
+        # Settled = opened now, or can never be opened; `save` may replace a snapshot once all are settled.
+        $permanent = @($skipped | Where-Object { $_.reason -ne 'no-shell' } | ForEach-Object { $_.sessionId })
         $restored = @(@(Get-Prop $snap 'restoredSessionIds') | Where-Object { $_ }) + @($launch | ForEach-Object { $_.sessionId })
-        Write-JsonFile $snapPath ([ordered]@{
-                version            = Get-Prop $snap 'version'
-                createdAt          = Get-Prop $snap 'createdAt'
-                restoredAt         = (Get-Date).ToUniversalTime().ToString('o')
-                restoredSessionIds = @($restored | Select-Object -Unique)
-                sessions           = @(Get-Prop $snap 'sessions')
-            })
+        $settled = @(@(Get-Prop $snap 'settledSessionIds') | Where-Object { $_ }) + $restored + $permanent
+        if ($launch.Count -gt 0 -or $permanent.Count -gt 0) {
+            $restoredAt = Get-Prop $snap 'restoredAt'
+            if ($launch.Count -gt 0) { $restoredAt = (Get-Date).ToUniversalTime().ToString('o') }
+            Write-JsonFile $snapPath ([ordered]@{
+                    version            = Get-Prop $snap 'version'
+                    createdAt          = Get-Prop $snap 'createdAt'
+                    restoredAt         = $restoredAt
+                    restoredSessionIds = @($restored | Select-Object -Unique)
+                    settledSessionIds  = @($settled | Select-Object -Unique)
+                    sessions           = @(Get-Prop $snap 'sessions')
+                })
+        }
     }
 
     Write-Result ([ordered]@{

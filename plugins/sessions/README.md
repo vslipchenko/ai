@@ -26,11 +26,11 @@ Git Bash and Windows Terminal are used when installed, never required.
 
 | Invoke | What it does |
 |---|---|
-| `save` | List live Claude Code sessions, let you pick, and store a snapshot. |
-| `restore` | Reopen every session from the latest snapshot (or one you name), each with `claude --resume <id>` in its folder and original terminal. |
+| `save` | List live Claude Code sessions, let you pick, and store them, replacing the previously saved set. |
+| `restore` | Reopen every saved session, each with `claude --resume <id>` in its folder and original terminal. |
 
 Both respond to natural language, e.g. *"save my sessions, I'm rebooting"*,
-*"restore my sessions"*, *"restore yesterday's sessions"*, *"restore just the
+*"restore my sessions"*, *"restore just the
 API one"*, *"restore them in cmd this time"*, *"always restore in Git Bash"*.
 
 ## Where sessions reopen
@@ -44,7 +44,7 @@ tell — the window it was in:
 | Git Bash inside Windows Terminal | a Windows Terminal tab running Git Bash |
 | PowerShell 7 / Windows PowerShell / cmd | a Windows Terminal tab (all in one window), or its own console window without Windows Terminal |
 | VS Code / JetBrains terminal | a Windows Terminal tab with the same shell (editor terminals can't be opened from outside) |
-| unknown (e.g. older snapshots) | Windows PowerShell |
+| unknown (e.g. sessions saved by version 1.0.0) | Windows PowerShell |
 
 **Fallbacks.** If the saved shell isn't there any more (say Git Bash was
 uninstalled), the session still opens, in PowerShell 7, else Windows
@@ -66,10 +66,14 @@ and can be cleared any time.
   back to transcripts written in the last 12 hours.
 - **Labels.** Each session is shown by its title (your `/rename` title, else
   Claude's generated one), folder, and last prompt.
-- **Storage.** Snapshots are JSON files in the plugin's own data folder
-  (`~/.claude/plugins/data/sessions-vslipchenko/snapshots/`), which survives
-  reboots and plugin updates. The newest 20 are kept. Uninstalling the plugin
-  deletes this folder unless you pass `--keep-data`.
+- **Storage.** The saved set is a single small JSON file in the plugin's own
+  data folder (`~/.claude/plugins/data/sessions-vslipchenko/snapshots/`), which
+  survives reboots and plugin updates. Nothing piles up: each save replaces the
+  previous file. If the previous set still has sessions that were never
+  restored, `save` asks before replacing it, so a mistaken save after a reboot
+  can't wipe what you meant to restore. A default shell, if you set one, is kept
+  next to it in `config.json`. Uninstalling the plugin deletes the folder unless
+  you pass `--keep-data`.
 - **Restoring.** Sessions that are already open are skipped, as are sessions
   whose folder or conversation no longer exists, and you're told which and why.
 
@@ -93,8 +97,8 @@ $p = Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\vslipchenko\sessions"
 powershell -NoProfile -ExecutionPolicy Bypass -File "$($p.FullName)\scripts\sessions.ps1" restore
 ```
 
-Commands: `list`, `save -Ids <id,...>`, `snapshots`,
-`restore [-Snapshot <file>] [-Ids <id,...>] [-UseShell gitbash|pwsh|powershell|cmd] [-Terminal wt|window] [-DryRun]`,
+Commands: `list`, `save -Ids <id,...> [-Force]`, `snapshots`,
+`restore [-Ids <id,...>] [-UseShell gitbash|pwsh|powershell|cmd] [-Terminal wt|window] [-DryRun]`,
 `config [-UseShell ...] [-Terminal ...] [-Reset]`.
 
 ## License
