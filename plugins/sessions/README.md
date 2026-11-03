@@ -1,10 +1,11 @@
 # sessions
 
-*Reboot without losing your place: save open Claude Code sessions, then reopen them all in one go.*
+*Close your sessions without losing your place: save open Claude Code sessions, then reopen them all in one go.*
 
-Before a restart, ask Claude to **save your sessions**: it lists the Claude Code
-sessions running on the machine and lets you pick which to keep. After the
-restart, start Claude Code anywhere and ask it to **restore your sessions**:
+Before closing them (a reboot, a terminal update, or just stopping for the
+day), ask Claude to **save your sessions**: it lists the Claude Code sessions
+running on the machine and lets you pick which to keep. Later, start Claude
+Code anywhere and ask it to **restore your sessions**:
 each one reopens resumed in its original folder, in the same kind of terminal
 it ran in — Git Bash, PowerShell or cmd.
 
@@ -71,7 +72,7 @@ and can be cleared any time.
   data folder (`~/.claude/plugins/data/sessions-vslipchenko/snapshots/`), which
   survives reboots and plugin updates. Nothing piles up: each save replaces the
   previous file. If the previous set still has sessions that were never
-  restored, `save` asks before replacing it, so a mistaken save after a reboot
+  restored, `save` asks before replacing it, so a mistaken save later on
   can't wipe what you meant to restore. A default shell, if you set one, is kept
   next to it in `config.json`. Uninstalling the plugin deletes the folder unless
   you pass `--keep-data`.
@@ -86,8 +87,8 @@ and can be cleared any time.
 
 - Only conversations come back. Dev servers, watchers and other processes
   started inside a session are not restarted.
-- A reply that is still being generated when the machine goes down is lost;
-  let busy sessions finish before rebooting.
+- A reply that is still being generated when a session is closed is lost;
+  let busy sessions finish first.
 - Claude Code deletes old conversations after its retention period
   (`cleanupPeriodDays`, default 30 days); those can't be resumed.
 - Windows only for now; other AI CLIs are not supported yet.

@@ -1,12 +1,13 @@
 ---
 name: save
-description: Save the currently open Claude Code terminal sessions (session id + folder + shell) so they can be reopened after a reboot with the `restore` skill. Lists the live sessions and lets the user pick which to keep; replaces the previously saved set (asking first if it was never restored). Use when the user wants to save / snapshot / remember / bookmark their open Claude sessions or terminals, e.g. "save my sessions", "I need to reboot, save my claude sessions", "snapshot my open terminals before restart". Windows only.
+description: Save the currently open Claude Code terminal sessions (session id + folder + shell) so they can be closed and reopened later (after a reboot, a terminal update, or the next day) with the `restore` skill. Lists the live sessions and lets the user pick which to keep; replaces the previously saved set (asking first if it was never restored). Use when the user wants to save / snapshot / remember / bookmark their open Claude sessions or terminals, e.g. "save my sessions", "I need to reboot, save my claude sessions", "save my sessions, I'm updating my terminal", "save these so I can continue tomorrow". Windows only.
 ---
 
 # Sessions — Save
 
 Snapshot the live Claude Code sessions the user picks, so `restore` can reopen
-each one in its folder (`claude --resume <id>`) after a reboot. Windows only.
+each one in its folder (`claude --resume <id>`) whenever the user wants them
+back. Windows only.
 
 ## Script
 
@@ -88,12 +89,25 @@ snapshot with unrestored sessions (`error: unrestored-snapshot`, plus
 `pendingSnapshot`): if that happens, ask the Step 1 question and retry with
 `-Force` only if the user chooses Replace.
 
-Report in plain text:
-- how many sessions were saved, listed as `title — folder (shell)`;
-- any `missing` ids (the session ended and its transcript is gone);
-- that after the reboot they can start Claude Code anywhere and ask to
-  **restore their sessions**.
+Report in plain text. Don't assume why the user is saving (reboot, terminal
+update, stopping for the day…): keep the wording about closing and coming back
+later, not about a reboot. Shape:
 
-Add two short caveats: a reply that is still being generated when the machine
-goes down is lost (let busy sessions finish first), and only the conversations
-come back — dev servers, watchers and other background processes do not.
+```
+Saved 3 sessions:
+
+- <title> (this session): <folder> (<shell>[, Windows Terminal])
+- ...
+
+Whenever you want them back, start Claude Code in any folder and ask it to
+restore your sessions. Each one reopens in its folder, in the same kind of
+terminal it ran in.
+
+- Let busy sessions finish before closing them: a reply still being written
+  when a session is closed is lost.
+- Only the conversations come back: dev servers, file watchers and other
+  background processes won't restart.
+```
+
+Mention `missing` ids only when there are any (that session ended and its
+conversation is gone, so it wasn't saved).

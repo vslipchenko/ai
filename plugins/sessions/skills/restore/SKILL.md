@@ -1,6 +1,6 @@
 ---
 name: restore
-description: Reopen Claude Code sessions saved earlier with the `save` skill — each resumed in its original folder (`claude --resume <id>`) and in the same kind of terminal it ran in (Git Bash, PowerShell, cmd), falling back to PowerShell or cmd if that terminal is gone. Use when the user wants to restore / reopen / bring back / resume their saved Claude sessions or terminals, e.g. "restore my sessions", "reopen the sessions I saved before the reboot", "restore them all in Git Bash", or to set how sessions are restored ("always restore in Git Bash"). Windows only.
+description: Reopen Claude Code sessions saved earlier with the `save` skill — each resumed in its original folder (`claude --resume <id>`) and in the same kind of terminal it ran in (Git Bash, PowerShell, cmd), falling back to PowerShell or cmd if that terminal is gone. Use when the user wants to restore / reopen / bring back / resume their saved Claude sessions or terminals, e.g. "restore my sessions", "reopen the sessions I saved before the reboot", "bring back yesterday's sessions", "restore them all in Git Bash", or to set how sessions are restored ("always restore in Git Bash"). Windows only.
 ---
 
 # Sessions — Restore
