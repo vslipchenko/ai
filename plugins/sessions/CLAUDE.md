@@ -14,9 +14,19 @@
   PowerShell 5.1: no `?:`, `??`, `?.`, `&&`/`||`. StrictMode 2 is on — read JSON
   properties via `Get-Prop`, and wrap function results in `@()` before `.Count`.
 - Variable names are case-insensitive: don't reuse `$e` next to `$E`, etc.
-- Session ids are validated as GUIDs before they reach any command line; the
-  resume command is passed via `-EncodedCommand`, so paths and titles need no
-  shell or `wt` quoting beyond the tab title sanitizer.
+- Session ids are validated as GUIDs before they reach any command line.
+  Per-shell launch quoting (all covered by `-Launch` tests — rerun them after
+  touching `New-LaunchSpec`):
+  - PowerShell: command via `-EncodedCommand`, no quoting needed.
+  - Git Bash: POSIX paths in single-quoted bash literals, no `;` in the command;
+    mintty is launched like `git-bash.exe` does (`MSYSTEM=MINGW64`), wt uses
+    `Git\bin\bash.exe`. `;` is escaped as `\;` for `wt`.
+  - cmd: `/k <exe> --resume <id>` with at most one pair of quotes (prefer the
+    8.3 short path); `wt` re-tokenizes, so nested `""…""` quoting breaks there.
+- Shell detection walks parent processes (`Get-LaunchInfo`). Git Bash's chain
+  usually ends before mintty (msys re-launches bash), so `host = null` +
+  `gitbash` restores to mintty. Restore must always fall back
+  (wanted → pwsh → powershell → cmd) rather than skip a session.
 - Inputs rely on undocumented Claude Code files: `~/.claude/sessions/<pid>.json`
   (`pid`, `sessionId`, `cwd`, `procStart` = FILETIME, `kind`, `name`) and
   transcript records (`custom-title`, `ai-title`, `last-prompt`, `cwd`). Keep the

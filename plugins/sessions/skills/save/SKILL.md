@@ -30,7 +30,10 @@ carries `error` and `message` — report the message and stop.
 ```
 
 Result: `sessions[]` with `sessionId`, `cwd`, `title`, `lastPrompt`,
-`isCurrent`, plus `source` and `hiddenNonInteractive`.
+`isCurrent`, `shell` (`gitbash` / `pwsh` / `powershell` / `cmd` / null) and
+`host` (`wt` / `mintty` / `vscode` / `jetbrains` / null), plus `source` and
+`hiddenNonInteractive`. `shell` and `host` are stored with the snapshot so
+`restore` reopens each session in the same kind of terminal.
 
 - No sessions → say so and stop.
 - `source` is `transcripts` → the live-session list was unavailable; tell the
@@ -44,7 +47,9 @@ Build one option per session:
 - **label**: the `title` (append ` (this session)` when `isCurrent`). Labels
   must be unique — on a clash append the folder name, then the first 8 chars of
   the id.
-- **description**: the `cwd`, then ` · last: <lastPrompt>` when present.
+- **description**: the `cwd`, then ` · <shell name>` when `shell` is set
+  (Git Bash, PowerShell 7, Windows PowerShell, cmd), then
+  ` · last: <lastPrompt>` when present.
 
 Then, by count:
 - **1 session** → don't ask; save it (the user asked to save) and say which.
@@ -70,7 +75,7 @@ Result: `snapshot` (file path), `saved[]`, `missing[]`, `pruned`. Snapshots
 are timestamped; only the newest 20 are kept.
 
 Report in plain text:
-- how many sessions were saved, listed as `title — folder`;
+- how many sessions were saved, listed as `title — folder (shell)`;
 - any `missing` ids (the session ended and its transcript is gone);
 - that after the reboot they can start Claude Code anywhere and ask to
   **restore their sessions**.

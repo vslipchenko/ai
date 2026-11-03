@@ -86,6 +86,7 @@ try {
     Assert (@($r.sessions).Count -eq 2) '-IncludeNonInteractive adds the sdk session'
     $sdk = @($r.sessions | Where-Object { $_.sessionId -eq $B })[0]
     Assert ($sdk.title -eq 'reg-bbbb') 'falls back to registry name without transcript'
+    Assert ($sdk.shell -eq 'powershell' -and $sdk.shellPath -like '*powershell.exe') 'detects the shell a session was started from'
 
     Write-Host 'save'
     $r = Run @('save', '-ClaudeHome', $home1, '-DataDir', $data, '-Ids', "$A,$E,$U")
@@ -140,6 +141,64 @@ try {
     $r = Run @('restore', '-ClaudeHome', $home1, '-DataDir', (Join-Path $root 'empty'), '-DryRun', '-ClaudeExe', 'x')
     Assert ($r.ok -eq $false -and $r.error -eq 'no-snapshots') 'no snapshots errors'
 
+    Write-Host 'restore: shells and fallbacks'
+    $realGit = $null
+    $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+    if ($gitCmd -and $gitCmd.Source -match '^(.*\\Git)\\(cmd|bin|mingw64\\bin)\\git\.exe$') { $realGit = $Matches[1] }
+    $noGit = Join-Path $root 'no-git'
+    $gitNoMintty = Join-Path $root 'git-no-mintty'
+    Write-Utf8 (Join-Path $gitNoMintty 'bin\bash.exe') ''
+    $hasWt = [bool](Get-Command wt -ErrorAction SilentlyContinue)
+    $claudeX = 'C:\x\claude.exe'
+
+    function Plan($fields, [string[]]$more) {
+        $entry = [ordered]@{ sessionId = $E; cwd = $projA; title = 'plan' }
+        foreach ($k in $fields.Keys) { $entry[$k] = $fields[$k] }
+        $s = [ordered]@{ version = 1; createdAt = '2026-01-01T00:00:00Z'; restoredAt = $null; restoredSessionIds = @(); sessions = @($entry) }
+        Write-Utf8 (Join-Path $snapDir 'plan.json') (ConvertTo-Json $s -Depth 5)
+        $argv = @('restore', '-ClaudeHome', $home1, '-DataDir', $data, '-DryRun', '-Snapshot', 'plan',
+            '-ClaudeExe', $claudeX, '-PowerShellExe', 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe') + $more
+        $r = Run $argv
+        return @($r.launched)[0]
+    }
+
+    $p = Plan @{} @()
+    Assert ($p.shell -eq 'powershell' -and -not $p.fallback) 'no saved shell -> Windows PowerShell'
+
+    if ($realGit) {
+        $p = Plan @{ shell = 'gitbash'; shellPath = "$realGit\usr\bin\bash.exe"; host = $null } @()
+        $posix = '/' + $projA.Substring(0, 1).ToLower() + ($projA.Substring(2) -replace '\\', '/')
+        $bashCwd = "'" + ($posix -replace "'", "'\''") + "'"
+        Assert ($p.shell -eq 'gitbash' -and $p.terminal -eq 'window' -and -not $p.fallback) 'Git Bash session -> Git Bash window'
+        Assert ($p.command -eq "cd $bashCwd && ('/c/x/claude.exe' --resume $E || :) && exec bash --login -i") 'builds bash resume command with POSIX paths'
+        if ($hasWt) {
+            $p = Plan @{ shell = 'gitbash'; shellPath = "$realGit\usr\bin\bash.exe"; host = 'wt' } @()
+            Assert ($p.shell -eq 'gitbash' -and $p.terminal -eq 'wt') 'Git Bash in Windows Terminal -> wt tab'
+        }
+    }
+    $p = Plan @{ shell = 'gitbash'; shellPath = 'C:\nowhere\Git\usr\bin\bash.exe' } @('-GitRoot', $noGit)
+    Assert ($p.shell -eq 'powershell' -and $p.fallback -like '*Git Bash not found*') 'Git Bash missing -> falls back to PowerShell'
+    if ($hasWt) {
+        $p = Plan @{ shell = 'gitbash' } @('-GitRoot', $gitNoMintty)
+        Assert ($p.shell -eq 'gitbash' -and $p.terminal -eq 'wt' -and $p.fallback -like '*mintty not found*') 'mintty missing -> Git Bash in Windows Terminal'
+    }
+    $p = Plan @{ shell = 'pwsh' } @()
+    Assert ($p.shell -eq 'powershell' -and $p.fallback -like '*pwsh not found*') 'pwsh missing -> Windows PowerShell'
+    $p = Plan @{ shell = 'cmd' } @('-Terminal', 'window')
+    Assert ($p.shell -eq 'cmd' -and $p.terminal -eq 'window' -and $p.command -eq "/k $claudeX --resume $E") 'cmd session -> cmd /k resume'
+    $p = Plan @{ shell = 'gitbash' } @('-UseShell', 'cmd')
+    Assert ($p.shell -eq 'cmd') '-UseShell overrides the saved shell'
+
+    $r = Run @('config', '-ClaudeHome', $home1, '-DataDir', $data, '-UseShell', 'cmd', '-Terminal', 'window')
+    Assert ($r.ok -and $r.config.restoreShell -eq 'cmd' -and $r.config.restoreTerminal -eq 'window') 'config stores defaults'
+    $p = Plan @{ shell = 'powershell' } @()
+    Assert ($p.shell -eq 'cmd' -and $p.terminal -eq 'window') 'saved defaults apply to restore'
+    $r = Run @('config', '-ClaudeHome', $home1, '-DataDir', $data, '-Reset')
+    Assert ($r.ok -and -not $r.config.restoreShell -and -not $r.config.restoreTerminal) 'config -Reset clears defaults'
+    $p = Plan @{ shell = 'powershell' } @()
+    Assert ($p.shell -eq 'powershell') 'cleared defaults stop applying'
+    Remove-Item (Join-Path $snapDir 'plan.json')
+
     Write-Host 'transcript fallback'
     $home2 = Join-Path $root 'claude2'
     Write-Transcript $home2 $E $projA @('{"type":"ai-title","aiTitle":"Recent","sessionId":"' + $E + '"}')
@@ -147,18 +206,56 @@ try {
     Assert ($r.ok -and $r.source -eq 'transcripts' -and $r.sessions[0].sessionId -eq $E) 'falls back to recent transcripts without registry'
 
     if ($Launch) {
-        Write-Host 'launch (opens terminal tabs that close themselves)'
+        Write-Host 'launch (opens terminal tabs/windows that close themselves)'
+        # A fake claude.exe: records "<cwd>|<args>", then ends the shells that were started
+        # for it (exit code 0, so mintty and Windows Terminal close the window/tab).
         $marker = Join-Path $root 'marker.txt'
-        $fake = Join-Path $root 'fake claude.ps1'
-        Write-Utf8 $fake ("Add-Content -LiteralPath '$marker' -Value (`"`$PWD|`" + (`$args -join ' ')); [Environment]::Exit(0)")
-        foreach ($mode in @('wt', 'window')) {
-            if ($mode -eq 'wt' -and -not (Get-Command wt -ErrorAction SilentlyContinue)) { continue }
+        $fakeDir = Join-Path $root 'fake dir'
+        New-Item -ItemType Directory -Force -Path $fakeDir | Out-Null
+        $fake = Join-Path $fakeDir 'claude.exe'
+        $since = (Get-Date).ToUniversalTime().Ticks
+        $src = @"
+using System; using System.IO; using System.Management; using System.Runtime.InteropServices; using System.Collections.Generic;
+class FakeClaude {
+  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+  [DllImport("kernel32.dll")] static extern bool TerminateProcess(IntPtr h, uint code);
+  static void Main(string[] args) {
+    File.AppendAllText(@"$marker", Directory.GetCurrentDirectory() + "|" + string.Join(" ", args) + "\n");
+    var shells = new List<int>();
+    int pid = System.Diagnostics.Process.GetCurrentProcess().Id;
+    for (int i = 0; i < 8; i++) {
+      var q = new ManagementObjectSearcher("SELECT ParentProcessId FROM Win32_Process WHERE ProcessId=" + pid).Get();
+      int parent = -1; foreach (ManagementObject o in q) parent = Convert.ToInt32(o["ParentProcessId"]);
+      if (parent <= 0) break;
+      System.Diagnostics.Process p;
+      try { p = System.Diagnostics.Process.GetProcessById(parent); } catch { break; }
+      string n = p.ProcessName.ToLowerInvariant();
+      if (!(n == "bash" || n == "sh" || n == "cmd" || n == "powershell" || n == "pwsh")) break;
+      if (p.StartTime.ToUniversalTime().Ticks < ${since}L) break;
+      shells.Add(parent); pid = parent;
+    }
+    shells.Reverse();
+    foreach (int s in shells) TerminateProcess(OpenProcess(1, false, s), 0);
+  }
+}
+"@
+        Add-Type -TypeDefinition $src -ReferencedAssemblies System.Management -OutputAssembly $fake -OutputType ConsoleApplication
+
+        $cases = @(@{ shell = 'powershell'; term = 'window' }, @{ shell = 'cmd'; term = 'window' })
+        if ($hasWt) { $cases += @(@{ shell = 'powershell'; term = 'wt' }, @{ shell = 'cmd'; term = 'wt' }) }
+        if ($realGit) {
+            $cases += @{ shell = 'gitbash'; term = 'window' }
+            if ($hasWt) { $cases += @{ shell = 'gitbash'; term = 'wt' } }
+        }
+        foreach ($c in $cases) {
             if (Test-Path $marker) { Remove-Item $marker }
-            $null = Run @('restore', '-ClaudeHome', $home1, '-DataDir', $data, '-ClaudeExe', $fake, '-Terminal', $mode, '-Shell', 'powershell.exe')
-            $deadline = (Get-Date).AddSeconds(20)
+            $null = Run @('restore', '-ClaudeHome', $home1, '-DataDir', $data, '-ClaudeExe', $fake,
+                '-UseShell', $c.shell, '-Terminal', $c.term, '-Ids', $E)
+            $deadline = (Get-Date).AddSeconds(25)
             while (-not (Test-Path $marker) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }
+            Start-Sleep -Milliseconds 300
             $got = if (Test-Path $marker) { (Get-Content $marker -Raw).Trim() } else { '' }
-            Assert ($got -eq "$projA|--resume $E") "real launch via $mode resumes in the right folder"
+            Assert ($got -eq "$projA|--resume $E") "real launch: $($c.shell) in $($c.term) resumes in the right folder"
         }
         $after = Get-Content -Raw (Join-Path $snapDir 'snapshot-29990101-000000.json') | ConvertFrom-Json
         Assert ($after.restoredAt -and @($after.restoredSessionIds) -contains $E) 'real restore marks the snapshot'

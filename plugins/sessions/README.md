@@ -5,7 +5,8 @@
 Before a restart, ask Claude to **save your sessions**: it lists the Claude Code
 sessions running on the machine and lets you pick which to keep. After the
 restart, start Claude Code anywhere and ask it to **restore your sessions**:
-each one reopens in its own terminal tab, resumed in its original folder.
+each one reopens resumed in its original folder, in the same kind of terminal
+it ran in — Git Bash, PowerShell or cmd.
 
 No more writing session ids down.
 
@@ -18,20 +19,42 @@ claude plugin install sessions@vslipchenko
 
 Then restart Claude Code.
 
-**Requirements:** Windows 10/11 with Windows PowerShell 5.1 or PowerShell 7.
-Windows Terminal is used when installed (one window, one tab per session);
-otherwise each session opens in its own PowerShell window.
+**Requirements:** Windows 10/11 with Windows PowerShell 5.1 (built in).
+Git Bash and Windows Terminal are used when installed, never required.
 
 ## Skills
 
 | Invoke | What it does |
 |---|---|
 | `save` | List live Claude Code sessions, let you pick, and store a snapshot. |
-| `restore` | Reopen every session from the latest snapshot (or one you name), each with `claude --resume <id>` in its folder. |
+| `restore` | Reopen every session from the latest snapshot (or one you name), each with `claude --resume <id>` in its folder and original terminal. |
 
 Both respond to natural language, e.g. *"save my sessions, I'm rebooting"*,
 *"restore my sessions"*, *"restore yesterday's sessions"*, *"restore just the
-API one"*.
+API one"*, *"restore them in cmd this time"*, *"always restore in Git Bash"*.
+
+## Where sessions reopen
+
+`save` records the shell each session was started from, and — when Windows can
+tell — the window it was in:
+
+| Saved from | Reopens in |
+|---|---|
+| Git Bash (its own window) | a Git Bash window |
+| Git Bash inside Windows Terminal | a Windows Terminal tab running Git Bash |
+| PowerShell 7 / Windows PowerShell / cmd | a Windows Terminal tab (all in one window), or its own console window without Windows Terminal |
+| VS Code / JetBrains terminal | a Windows Terminal tab with the same shell (editor terminals can't be opened from outside) |
+| unknown (e.g. older snapshots) | Windows PowerShell |
+
+**Fallbacks.** If the saved shell isn't there any more (say Git Bash was
+uninstalled), the session still opens, in PowerShell 7, else Windows
+PowerShell, else cmd, and you're told which session fell back and why. A
+missing Windows Terminal or Git Bash window (mintty) likewise falls back to
+the other.
+
+**Overrides.** Ask for a different shell for one restore, or set a default
+("always restore in Git Bash"); the default is kept in the plugin's data folder
+and can be cleared any time.
 
 ## How it works
 
@@ -70,7 +93,9 @@ $p = Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\vslipchenko\sessions"
 powershell -NoProfile -ExecutionPolicy Bypass -File "$($p.FullName)\scripts\sessions.ps1" restore
 ```
 
-Commands: `list`, `save -Ids <id,...>`, `snapshots`, `restore [-Snapshot <file>] [-Ids <id,...>] [-DryRun]`.
+Commands: `list`, `save -Ids <id,...>`, `snapshots`,
+`restore [-Snapshot <file>] [-Ids <id,...>] [-UseShell gitbash|pwsh|powershell|cmd] [-Terminal wt|window] [-DryRun]`,
+`config [-UseShell ...] [-Terminal ...] [-Reset]`.
 
 ## License
 

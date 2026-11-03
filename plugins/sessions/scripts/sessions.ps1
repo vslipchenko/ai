@@ -7,17 +7,22 @@
     list       Live Claude Code sessions, read from <ClaudeHome>\sessions\<pid>.json
                (each entry verified against the running process), falling back
                to recently modified transcripts if that registry is unavailable.
+               Each live session also records the shell it was started from
+               (gitbash / pwsh / powershell / cmd) and, when detectable, its window
+               program (wt / mintty / vscode / jetbrains).
     save       Write a snapshot of the sessions named in -Ids to <DataDir>\snapshots.
     snapshots  Summarise stored snapshots, newest first.
-    restore    Open one terminal tab per session in a snapshot, each running
-               `claude --resume <id>` in the session's folder.
+    restore    Reopen each session of a snapshot with `claude --resume <id>` in its
+               folder, in the shell it ran in. If that shell is missing, falls back
+               to PowerShell 7, Windows PowerShell, then cmd.
+    config     Show or set the default restore shell/terminal (-UseShell, -Terminal, -Reset).
 
   Compatible with Windows PowerShell 5.1 and PowerShell 7+.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('list', 'save', 'snapshots', 'restore')]
+    [ValidateSet('list', 'save', 'snapshots', 'restore', 'config')]
     [string]$Command,
 
     # Plugin data dir (skills pass ${CLAUDE_PLUGIN_DATA}). Falls back when empty or unsubstituted.
@@ -41,13 +46,19 @@ param(
     # Transcript fallback window for `list` when the live-session registry is unavailable.
     [int]$SinceHours = 12,
 
-    [ValidateSet('auto', 'wt', 'window')]
-    [string]$Terminal = 'auto',
+    # restore: shell / terminal to use instead of what each session ran in.
+    # config: the saved default for these ('auto' clears it).
+    [ValidateSet('', 'auto', 'gitbash', 'pwsh', 'powershell', 'cmd')]
+    [string]$UseShell = '',
+    [ValidateSet('', 'auto', 'wt', 'window')]
+    [string]$Terminal = '',
+    [switch]$Reset,
 
     # Overrides, mainly for tests.
     [string]$ClaudeHome,
     [string]$ClaudeExe,
-    [string]$Shell
+    [string]$PowerShellExe,
+    [string]$GitRoot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -222,6 +233,58 @@ function Test-ProcessLive($procId, $procStart) {
     return ($p.ProcessName -match '^(claude|node|bun)')
 }
 
+$script:ProcMap = $null
+function Get-ProcMap {
+    if ($null -eq $script:ProcMap) {
+        $script:ProcMap = @{}
+        foreach ($p in @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, ExecutablePath)) {
+            $script:ProcMap[[int]$p.ProcessId] = $p
+        }
+    }
+    return $script:ProcMap
+}
+
+# Walks a Claude process's ancestors: the nearest shell is what it was started
+# from; a window program further up is where it was shown. Either may be $null
+# (e.g. Git Bash re-launches bash, so its chain usually stops before mintty).
+function Get-LaunchInfo([int]$procId) {
+    $map = Get-ProcMap
+    $info = [ordered]@{ shell = $null; shellPath = $null; host = $null }
+    $seen = @{}
+    $cur = $map[$procId]
+    for ($i = 0; $i -lt 12 -and $cur; $i++) {
+        $parentId = [int]$cur.ParentProcessId
+        if ($seen.ContainsKey($parentId)) { break }
+        $seen[$parentId] = $true
+        $cur = $map[$parentId]
+        if (-not $cur) { break }
+        $name = ([string]$cur.Name).ToLowerInvariant()
+        $path = [string]$cur.ExecutablePath
+        if (-not $info.shell) {
+            $shell = $null
+            switch -Regex ($name) {
+                '^(bash|sh)\.exe$' { if ($path -match '\\Git\\') { $shell = 'gitbash' } }
+                '^pwsh\.exe$' { $shell = 'pwsh' }
+                '^powershell\.exe$' { $shell = 'powershell' }
+                '^cmd\.exe$' { $shell = 'cmd' }
+            }
+            if ($shell) { $info.shell = $shell; $info.shellPath = $path }
+            continue
+        }
+        $hostName = $null
+        switch -Regex ($name) {
+            '^windowsterminal\.exe$' { $hostName = 'wt' }
+            '^mintty\.exe$' { $hostName = 'mintty' }
+            '^(code|code - insiders|cursor|windsurf)\.exe$' { $hostName = 'vscode' }
+            '^(idea|webstorm|pycharm|rider|goland|phpstorm|clion|rubymine|datagrip)64\.exe$' { $hostName = 'jetbrains' }
+            '^explorer\.exe$' { break }
+        }
+        if ($hostName) { $info.host = $hostName; break }
+        if ($name -eq 'explorer.exe') { break }
+    }
+    return $info
+}
+
 function Get-LiveSessions([bool]$includeNonInteractive) {
     $sessions = New-Object System.Collections.ArrayList
     $seen = @{}
@@ -246,8 +309,10 @@ function Get-LiveSessions([bool]$includeNonInteractive) {
             $started = $null
             $ms = Get-Prop $o 'startedAt'
             if ($ms) { $started = [DateTimeOffset]::FromUnixTimeMilliseconds([long]$ms).ToString('o') }
+            $launch = Get-LaunchInfo ([int]$procId)
             [void]$sessions.Add((New-SessionEntry $sid $cwd (Get-Prop $o 'name') ([ordered]@{
                 pid = [int]$procId; kind = $kind; status = (Get-Prop $o 'status'); startedAt = $started
+                shell = $launch.shell; shellPath = $launch.shellPath; host = $launch.host
             })))
         }
     }
@@ -312,7 +377,10 @@ function Invoke-Save {
             if ($t.transcript -and $t.cwd) { $e = $t }
         }
         if ($e) {
-            $saved += [ordered]@{ sessionId = $e.sessionId; cwd = $e.cwd; title = $e.title; lastPrompt = $e.lastPrompt }
+            $s = [ordered]@{ sessionId = $e.sessionId; cwd = $e.cwd; title = $e.title; lastPrompt = $e.lastPrompt
+                shell = $null; shellPath = $null; host = $null }
+            foreach ($k in @('shell', 'shellPath', 'host')) { if ($e.Contains($k)) { $s[$k] = $e[$k] } }
+            $saved += $s
         } else { $missing += $id }
     }
     if ($saved.Count -eq 0) { Stop-WithError 'nothing-saved' 'None of the given sessions could be found.' }
@@ -381,6 +449,198 @@ function Resolve-Exe([string]$override, [string[]]$names) {
     return $null
 }
 
+function Read-Config($data) {
+    $path = Join-Path $data.dir 'config.json'
+    $cfg = [ordered]@{ restoreShell = $null; restoreTerminal = $null }
+    if (Test-Path -LiteralPath $path) {
+        $o = Read-JsonFile $path
+        foreach ($k in @('restoreShell', 'restoreTerminal')) { $v = Get-Prop $o $k; if ($v) { $cfg[$k] = [string]$v } }
+    }
+    return $cfg
+}
+
+function Invoke-Config {
+    $data = Resolve-DataDir
+    $cfg = Read-Config $data
+    $changed = $false
+    if ($Reset) { $cfg.restoreShell = $null; $cfg.restoreTerminal = $null; $changed = $true }
+    if ($UseShell) { $cfg.restoreShell = $(if ($UseShell -eq 'auto') { $null } else { $UseShell }); $changed = $true }
+    if ($Terminal) { $cfg.restoreTerminal = $(if ($Terminal -eq 'auto') { $null } else { $Terminal }); $changed = $true }
+    if ($changed) { Write-JsonFile (Join-Path $data.dir 'config.json') $cfg }
+    Write-Result ([ordered]@{ ok = $true; config = $cfg; changed = $changed })
+}
+
+# Folder of a Git for Windows install (holds bin\bash.exe, usr\bin\mintty.exe).
+function Find-GitRoot([string]$savedShellPath) {
+    $candidates = @()
+    if ($GitRoot) { $candidates += $GitRoot }
+    else {
+        if ($savedShellPath -and $savedShellPath -match '^(.*\\Git)\\(usr\\)?bin\\[^\\]+$') { $candidates += $Matches[1] }
+        $git = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($git -and $git.Source -match '^(.*\\Git)\\(cmd|bin|mingw64\\bin)\\git\.exe$') { $candidates += $Matches[1] }
+        foreach ($pf in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, (Join-Path $env:LOCALAPPDATA 'Programs'))) {
+            if ($pf) { $candidates += (Join-Path $pf 'Git') }
+        }
+    }
+    foreach ($c in $candidates) {
+        if (Test-Path -LiteralPath (Join-Path $c 'bin\bash.exe')) { return $c }
+    }
+    return $null
+}
+
+function ConvertTo-PosixPath([string]$p) {
+    if ($p -match '^([A-Za-z]):[\\/]?(.*)$') {
+        $rest = ($Matches[2] -replace '\\', '/').TrimEnd('/')
+        return '/' + $Matches[1].ToLowerInvariant() + '/' + $rest
+    }
+    return ($p -replace '\\', '/')
+}
+
+function ConvertTo-BashLiteral([string]$s) { return "'" + ($s -replace "'", "'\''") + "'" }
+
+function Get-TabTitle([string]$t) {
+    $t = ($t -replace '["`;]', '').Trim().TrimEnd('\')
+    if (-not $t) { $t = 'claude' }
+    if ($t.Length -gt 40) { $t = $t.Substring(0, 40) }
+    return $t
+}
+
+# Which shells exist on this machine right now.
+function Get-ShellAvailability {
+    $wsRoot = $env:SystemRoot
+    $ps = Resolve-Exe $PowerShellExe @('powershell')
+    if (-not $ps -and $wsRoot) {
+        $p = Join-Path $wsRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        if (Test-Path -LiteralPath $p) { $ps = $p }
+    }
+    $cmd = $env:ComSpec
+    if (-not $cmd -or -not (Test-Path -LiteralPath $cmd)) { $cmd = Join-Path $wsRoot 'System32\cmd.exe' }
+    $pwsh = $null
+    if (-not $PowerShellExe) { $pwsh = Resolve-Exe $null @('pwsh') }
+    return @{
+        pwsh       = $pwsh
+        powershell = $ps
+        cmd        = $cmd
+        wt         = [bool](Get-Command wt -ErrorAction SilentlyContinue)
+    }
+}
+
+# Decide shell + terminal for one session. Tries the wanted shell, then
+# PowerShell 7, Windows PowerShell and cmd, so a missing shell never blocks a restore.
+function Resolve-LaunchTarget($item, $avail, [string]$shellPref, [string]$termPref) {
+    $savedShell = [string](Get-Prop $item 'shell')
+    $savedHost = [string](Get-Prop $item 'host')
+    $wanted = $shellPref
+    if (-not $wanted) { $wanted = $savedShell }
+    if (-not $wanted) { $wanted = 'powershell' }
+
+    $order = @($wanted) + @('pwsh', 'powershell', 'cmd' | Where-Object { $_ -ne $wanted })
+    $notes = @()
+    foreach ($shell in $order) {
+        $target = $null
+        if ($shell -eq 'gitbash') {
+            $root = Find-GitRoot ([string](Get-Prop $item 'shellPath'))
+            if (-not $root) { $notes += 'Git Bash not found'; continue }
+            $hasMintty = (Test-Path -LiteralPath (Join-Path $root 'usr\bin\mintty.exe')) -and
+                (Test-Path -LiteralPath (Join-Path $root 'usr\bin\bash.exe'))
+            $term = $termPref
+            if (-not $term -or $term -eq 'auto') {
+                if ($savedShell -eq 'gitbash' -and $savedHost -in @('wt', 'vscode', 'jetbrains')) { $term = 'wt' } else { $term = 'window' }
+            }
+            if ($term -eq 'window' -and -not $hasMintty) { $notes += 'mintty not found'; $term = 'wt' }
+            if ($term -eq 'wt' -and -not $avail.wt) {
+                if ($hasMintty) { $notes += 'Windows Terminal not found'; $term = 'window' }
+                else { $notes += 'no terminal for Git Bash'; continue }
+            }
+            $target = @{ shell = 'gitbash'; terminal = $term; root = $root }
+        } else {
+            $exe = $avail[$shell]
+            if (-not $exe) {
+                if ($shell -eq $wanted) { $notes += "$shell not found" }
+                continue
+            }
+            $term = $termPref
+            if (-not $term -or $term -eq 'auto') {
+                if ($avail.wt) { $term = 'wt' } else { $term = 'window' }
+            }
+            if ($term -eq 'wt' -and -not $avail.wt) { $notes += 'Windows Terminal not found'; $term = 'window' }
+            $target = @{ shell = $shell; terminal = $term; exe = $exe }
+        }
+        $fallback = $null
+        if ($target.shell -ne $wanted -or $notes.Count -gt 0) { $fallback = ($notes | Select-Object -Unique) -join '; ' }
+        $target.fallback = $fallback
+        return $target
+    }
+    return $null
+}
+
+# Builds the command line(s) for one session.
+function New-LaunchSpec($target, [string]$sid, [string]$cwd, [string]$title, [string]$claude) {
+    $t = Get-TabTitle $title
+    $spec = @{ wtTab = $null; exe = $null; args = $null; env = @{}; command = $null }
+    switch ($target.shell) {
+        'gitbash' {
+            $bashCmd = 'cd ' + (ConvertTo-BashLiteral (ConvertTo-PosixPath $cwd)) + ' && (' +
+                (ConvertTo-BashLiteral (ConvertTo-PosixPath $claude)) + " --resume $sid || :) && exec bash --login -i"
+            $spec.command = $bashCmd
+            $root = $target.root
+            if ($target.terminal -eq 'wt') {
+                # bin\bash.exe sets up the Git Bash environment itself; `;` must be escaped for wt.
+                $spec.wtTab = ('--title "{0}" "{1}" --login -i -c "{2}"' -f $t, (Join-Path $root 'bin\bash.exe'), $bashCmd) -replace ';', '\;'
+            } else {
+                # Same way git-bash.exe opens its window.
+                $spec.exe = Join-Path $root 'usr\bin\mintty.exe'
+                $spec.args = '-o AppID=GitForWindows.Bash -o AppName="Git Bash" -i "{0}" -t "{1}" -- /usr/bin/bash --login -i -c "{2}"' -f (Join-Path $root 'git-bash.exe'), $t, $bashCmd
+                $spec.env = @{ MSYSTEM = 'MINGW64'; CHERE_INVOKING = '1' }
+            }
+        }
+        'cmd' {
+            # cmd keeps the quotes in `/k "<exe>" args` only when the path has no &()^@ etc.;
+            # prefer the 8.3 short path (no spaces, no quotes needed) when it exists.
+            $exePath = $claude
+            if ($exePath -match '[\s&()^@,;=!%]') {
+                try {
+                    $short = (New-Object -ComObject Scripting.FileSystemObject).GetFile($exePath).ShortPath
+                    if ($short -and $short -notmatch '[\s&()^@,;=!%]') { $exePath = $short }
+                } catch { }
+            }
+            if ($exePath -match '\s') { $exePath = '"' + $exePath + '"' }
+            $inner = '{0} --resume {1}' -f $exePath, $sid
+            $spec.command = "/k $inner"
+            if ($target.terminal -eq 'wt') {
+                $dir = $cwd
+                if ($dir.EndsWith('\')) { $dir += '.' }
+                $spec.wtTab = ('--title "{0}" -d "{1}" "{2}" /k {3}' -f $t, $dir, $target.exe, $inner) -replace ';', '\;'
+            } else {
+                $spec.exe = $target.exe
+                $spec.args = "/k $inner"
+            }
+        }
+        default {
+            $text = "Set-Location -LiteralPath $(ConvertTo-PsLiteral $cwd); & $(ConvertTo-PsLiteral $claude) --resume $sid"
+            $spec.command = $text
+            $enc = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($text))
+            if ($target.terminal -eq 'wt') {
+                $spec.wtTab = '--title "{0}" "{1}" -NoExit -EncodedCommand {2}' -f $t, $target.exe, $enc
+            } else {
+                $spec.exe = $target.exe
+                $spec.args = "-NoExit -EncodedCommand $enc"
+            }
+        }
+    }
+    return $spec
+}
+
+function Start-Window($spec, [string]$cwd) {
+    $saved = @{}
+    foreach ($k in $spec.env.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $spec.env[$k]) }
+    try {
+        Start-Process -FilePath $spec.exe -ArgumentList $spec.args -WorkingDirectory $cwd
+    } finally {
+        foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) }
+    }
+}
+
 function Invoke-Restore {
     $data = Resolve-DataDir
 
@@ -406,11 +666,15 @@ function Invoke-Restore {
 
     $claude = Resolve-Exe $ClaudeExe @('claude')
     if (-not $claude) { Stop-WithError 'claude-not-found' 'The claude executable is not on PATH.' }
-    $shellExe = Resolve-Exe $Shell @('pwsh', 'powershell')
-    $mode = $Terminal
-    if ($mode -eq 'auto') {
-        if (Get-Command wt -ErrorAction SilentlyContinue) { $mode = 'wt' } else { $mode = 'window' }
-    }
+
+    # Per-run flags win over the saved preference, which wins over what each session ran in.
+    $cfg = Read-Config $data
+    $shellPref = $UseShell
+    if (-not $shellPref) { $shellPref = $cfg.restoreShell }
+    if ($shellPref -eq 'auto') { $shellPref = $null }
+    $termPref = $Terminal
+    if (-not $termPref) { $termPref = $cfg.restoreTerminal }
+    $avail = Get-ShellAvailability
 
     $live = Get-LiveSessions $true
     $liveIds = @{}
@@ -418,46 +682,44 @@ function Invoke-Restore {
 
     $launch = @()
     $skipped = @()
+    $specs = @{}
     foreach ($it in $items) {
         $sid = ([string](Get-Prop $it 'sessionId')).ToLowerInvariant()
         $cwd = [string](Get-Prop $it 'cwd')
         $title = [string](Get-Prop $it 'title')
         $row = [ordered]@{ sessionId = $sid; title = $title; cwd = $cwd }
         $reason = $null
+        $target = $null
         if ($sid -notmatch $GuidRx) { $reason = 'bad-id' }
         elseif ($liveIds.ContainsKey($sid)) { $reason = 'already-running' }
         elseif (-not $cwd -or -not (Test-Path -LiteralPath $cwd -PathType Container)) { $reason = 'folder-missing' }
         elseif (-not (Find-Transcript $sid)) { $reason = 'transcript-missing' }
+        else {
+            $target = Resolve-LaunchTarget $it $avail $shellPref $termPref
+            if (-not $target) { $reason = 'no-shell' }
+        }
         if ($reason) { $row.reason = $reason; $skipped += $row; continue }
 
-        $row.command = "Set-Location -LiteralPath $(ConvertTo-PsLiteral $cwd); & $(ConvertTo-PsLiteral $claude) --resume $sid"
+        $spec = New-LaunchSpec $target $sid $cwd $title $claude
+        $row.shell = $target.shell
+        $row.savedShell = Get-Prop $it 'shell'
+        $row.terminal = $target.terminal
+        $row.fallback = $target.fallback
+        $row.command = $spec.command
+        $specs[$sid] = $spec
         $launch += $row
     }
 
-    $tabTitle = {
-        param($t)
-        $t = ($t -replace '["`;]', '').Trim().TrimEnd('\')
-        if (-not $t) { $t = 'claude' }
-        if ($t.Length -gt 40) { $t = $t.Substring(0, 40) }
-        return $t
-    }
-
     if (-not $DryRun -and $launch.Count -gt 0) {
-        if ($mode -eq 'wt') {
-            # One window per 10 tabs keeps the command line well under the 32K limit.
-            for ($i = 0; $i -lt $launch.Count; $i += 10) {
-                $chunk = @($launch[$i..([Math]::Min($i + 9, $launch.Count - 1))])
-                $tabs = @($chunk | ForEach-Object {
-                        $enc = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($_.command))
-                        'new-tab --title "{0}" "{1}" -NoExit -EncodedCommand {2}' -f (& $tabTitle $_.title), $shellExe, $enc
-                    })
-                Start-Process -FilePath 'wt.exe' -ArgumentList ('-w new ' + ($tabs -join ' ; '))
-            }
-        } else {
-            foreach ($l in $launch) {
-                $enc = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($l.command))
-                Start-Process -FilePath $shellExe -ArgumentList @('-NoExit', '-EncodedCommand', $enc)
-            }
+        $wtRows = @($launch | Where-Object { $_.terminal -eq 'wt' })
+        # One Windows Terminal window per 10 tabs keeps the command line well under the 32K limit.
+        for ($i = 0; $i -lt $wtRows.Count; $i += 10) {
+            $chunk = @($wtRows[$i..([Math]::Min($i + 9, $wtRows.Count - 1))])
+            $tabs = @($chunk | ForEach-Object { 'new-tab ' + $specs[$_.sessionId].wtTab })
+            Start-Process -FilePath 'wt.exe' -ArgumentList ('-w new ' + ($tabs -join ' ; '))
+        }
+        foreach ($row in @($launch | Where-Object { $_.terminal -ne 'wt' })) {
+            Start-Window $specs[$row.sessionId] $row.cwd
         }
 
         $restored = @(@(Get-Prop $snap 'restoredSessionIds') | Where-Object { $_ }) + @($launch | ForEach-Object { $_.sessionId })
@@ -471,12 +733,11 @@ function Invoke-Restore {
     }
 
     Write-Result ([ordered]@{
-            ok        = $true
-            snapshot  = $snapPath
-            terminal  = $mode
-            dryRun    = [bool]$DryRun
-            launched  = $launch
-            skipped   = $skipped
+            ok       = $true
+            snapshot = $snapPath
+            dryRun   = [bool]$DryRun
+            launched = $launch
+            skipped  = $skipped
         })
 }
 
@@ -486,6 +747,7 @@ try {
         'save' { Invoke-Save }
         'snapshots' { Invoke-Snapshots }
         'restore' { Invoke-Restore }
+        'config' { Invoke-Config }
     }
 } catch {
     Stop-WithError 'unexpected' $_.Exception.Message
