@@ -1,6 +1,6 @@
 ---
 name: manage
-description: Session manager — keep the saved list of Claude Code sessions up to date automatically instead of saving by hand: once turned on, every new or resumed session is added (with its folder, shell and terminal) and sessions exited on purpose are dropped, so a sudden close, crash or reboot never loses track of them; reopen them later with the `restore` skill. Also turns this off again and reports its status. Use when the user says "manage sessions", "session manager", "start the session manager", "track my sessions automatically", "auto-save my sessions", "stop managing sessions", "turn off the session manager", "are my sessions being managed?". Windows and Linux.
+description: Session manager — keep the saved list of Claude Code sessions up to date automatically instead of saving by hand — once turned on, every new or resumed session is added (with its folder, shell and terminal) and sessions exited on purpose are dropped, so a sudden close, crash or reboot never loses track of them; reopen them later with the `restore` skill. Also turns this off again and reports its status. Use when the user says "manage sessions", "session manager", "start the session manager", "track my sessions automatically", "auto-save my sessions", "stop managing sessions", "turn off the session manager", "are my sessions being managed?". Windows and Linux.
 ---
 
 # Sessions — Manage

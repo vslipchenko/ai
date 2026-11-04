@@ -45,6 +45,9 @@
   `scripts/tests/test_sessions.py` (Linux, stdlib unittest).
 
 ## Shared rules
+- SKILL.md frontmatter must be strict YAML: an unquoted `description:` may not
+  contain `: ` (colon + space) — Claude Code accepts it, strict parsers (and
+  WebStorm) don't. Use a dash, or quote the whole value.
 - Session ids are validated as GUIDs before they reach any command line.
 - `restore` runs inside a Claude session, whose tool shells carry session
   markers (`CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_SESSION_ID`, messaging
