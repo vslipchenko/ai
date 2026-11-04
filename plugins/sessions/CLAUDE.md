@@ -122,8 +122,10 @@
   liveness accepts epoch s/ms within 2 s, else falls back to the process name.
 - Terminal and iTerm2 open via `osascript`, with the command and title passed
   as `argv` to `on run argv` — never interpolated into AppleScript text. The run
-  is waited for: error -1743 / "not authorized" → skip reason
-  `automation-denied`, other errors → `launch-failed` (neither is settled, so a
+  is waited for: error -1743 / "not authorized", or no answer within 45 s
+  (`SESSIONS_OSASCRIPT_TIMEOUT` overrides it for tests; macOS is waiting for its
+  permission prompt — seen on CI runners) → skip reason `automation-denied`,
+  remembered per app for the rest of the restore; other errors → `launch-failed` (neither is settled, so a
   later restore retries). Ghostty: `open -na <app> --args …`; kitty, WezTerm,
   Alacritty: the binary inside the app bundle (or on PATH) with the Linux args.
 - Fallbacks: shells zsh → bash → sh; terminals saved → `MAC_TERMINALS`

@@ -125,8 +125,9 @@ then a detached tmux session.
 
 **Permission.** The first restore into Terminal or iTerm2 makes macOS ask
 whether the app running Claude may control it. If that's refused, the session
-is reported as skipped (`automation-denied`) rather than lost: allow it in
-System Settings › Privacy & Security › Automation and restore again.
+is reported as skipped (`automation-denied`) rather than lost — also when the
+prompt is left unanswered for 45 seconds: allow it in System Settings › Privacy
+& Security › Automation and restore again.
 
 **Overrides.** Ask for a different shell for one restore, or set a default
 ("always restore in Git Bash"); the default is kept in the plugin's data folder

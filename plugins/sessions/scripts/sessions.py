@@ -1073,10 +1073,18 @@ def run_osascript(osa, env):
     for line in osa['script']:
         argv += ['-e', line]
     argv += osa['args']
+    # The first time, macOS asks whether the app running Claude may control Terminal / iTerm2,
+    # and osascript waits for the answer; a run that doesn't finish means nobody answered.
+    timeout = float(os.environ.get('SESSIONS_OSASCRIPT_TIMEOUT') or 45)   # override for tests
     try:
-        r = subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+        r = subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {'reason': 'automation-denied',
+                'detail': 'no answer within %d s: macOS is most likely waiting for its permission prompt '
+                          '("... wants access to control %s"). Answer it, or allow it in System Settings > '
+                          'Privacy & Security > Automation, then restore again.' % (timeout, osa['app'])}
     except (OSError, subprocess.SubprocessError) as e:
-        return {'reason': 'launch-failed', 'detail': str(e)}
+        return {'reason': 'launch-failed', 'detail': str(e)[:300]}
     if r.returncode == 0:
         return None
     detail = (r.stderr or r.stdout or '').strip()[:300]
@@ -1192,6 +1200,7 @@ def cmd_restore(c):
         wt_done = False
         windows_left = sum(1 for r in launch if r['terminal'] not in ('wt', 'tmux'))
         failed = {}
+        denied_apps = {}
         for r in launch:
             spec = specs[r['sessionId']]
             if r['terminal'] == 'wt':
@@ -1218,9 +1227,14 @@ def cmd_restore(c):
                 subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             else:
                 if spec['osa']:
-                    err = run_osascript(spec['osa'], env)
+                    app = spec['osa']['app']
+                    # Once macOS has refused (or not answered) for an app, don't wait again for
+                    # every other session bound for it.
+                    err = denied_apps.get(app) or run_osascript(spec['osa'], env)
                     if err:
                         failed[r['sessionId']] = err
+                        if err['reason'] == 'automation-denied':
+                            denied_apps[app] = err
                 else:
                     spawn(spec['argv'], r['cwd'], env)
                 windows_left -= 1

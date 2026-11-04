@@ -140,9 +140,11 @@ Report in plain text:
     was found at all;
   - `bad-id` — the snapshot entry is damaged.
   - `automation-denied` (macOS) — macOS didn't allow controlling Terminal /
-    iTerm2: tell the user to allow it in System Settings › Privacy & Security ›
-    Automation (or answer the prompt), then restore again; `detail` has the
-    message;
+    iTerm2, or its permission prompt ("… wants access to control Terminal")
+    was left unanswered for 45 s: tell the user to answer the prompt or allow it
+    in System Settings › Privacy & Security › Automation, then restore again;
+    `detail` has the message. Other sessions for the same app are skipped at
+    once with the same reason, so there is only one wait;
   - `launch-failed` — the terminal could not be started (`detail` says why);
     restoring again retries it.
 

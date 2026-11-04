@@ -613,6 +613,55 @@ class SessionsTests(unittest.TestCase):
         p = mac({'shell': 'zsh', 'host': 'wt'}, terminals='wt,terminal')
         self.assertEqual(p['terminal'], 'terminal', 'no Windows Terminal on macOS')
 
+    def test_osascript_outcomes(self):
+        """macOS Terminal launches through a fake osascript: ok, refused (-1743), no answer (timeout),
+        other error. Refusals and timeouts are asked once per app and never settle the session."""
+        e = self.env
+        H3 = '44444444-0000-4000-8000-0000000000b3'
+        e.transcript(H3, e.proj)
+        fakebin = os.path.join(e.root, 'fake-osa')
+        log = os.path.join(e.root, 'osa-calls.log')
+        write(os.path.join(fakebin, 'osascript'),
+              '#!/bin/sh\necho "$*" >> %s\ncase "$FAKE_OSA_MODE" in\n'
+              '  ok) exit 0 ;;\n'
+              '  deny) echo "execution error: Not authorized to send Apple events to Terminal. (-1743)" >&2; exit 1 ;;\n'
+              '  hang) sleep 5 ;;\n'
+              '  *) echo "boom" >&2; exit 1 ;;\nesac\n' % ("'" + log + "'"))
+        os.chmod(os.path.join(fakebin, 'osascript'), 0o755)
+        data = os.path.join(e.root, 'osa-data')
+        two = [{'sessionId': E, 'cwd': e.proj, 'title': 'one', 'shell': 'zsh', 'host': 'terminal'},
+               {'sessionId': H3, 'cwd': e.proj, 'title': 'two', 'shell': 'zsh', 'host': 'terminal'}]
+
+        def restore(mode):
+            e.snapshot('snapshot-20260101-000000.json', two, data=data, settledSessionIds=[])
+            if os.path.exists(log):
+                os.remove(log)
+            env = dict(os.environ, PATH=fakebin + os.pathsep + os.environ.get('PATH', ''), FAKE_OSA_MODE=mode,
+                       SESSIONS_OSASCRIPT_TIMEOUT='1')
+            t0 = time.time()
+            r = run('restore', *self.h(), '-DataDir', data, '-ClaudeExe', '/x/claude', '-Platform', 'mac',
+                    '-Terminals', 'terminal', '-Shells', 'zsh,bash', env=env)
+            calls = open(log).read().count('tell application "Terminal"') if os.path.exists(log) else 0
+            with open(os.path.join(data, 'snapshots', 'snapshot-20260101-000000.json')) as f:
+                settled = json.load(f).get('settledSessionIds') or []
+            return r, calls, time.time() - t0, settled
+
+        r, calls, _, settled = restore('ok')
+        self.assertEqual((len(r['launched']), calls), (2, 2))
+        self.assertTrue(E in settled and H3 in settled)
+        r, calls, _, settled = restore('deny')
+        self.assertEqual(sorted(s['reason'] for s in r['skipped']), ['automation-denied'] * 2)
+        self.assertEqual(calls, 1, 'refused once: the second session is not asked again')
+        self.assertFalse(E in settled or H3 in settled, 'refused sessions stay pending')
+        r, calls, took, _ = restore('hang')
+        self.assertEqual(sorted(s['reason'] for s in r['skipped']), ['automation-denied'] * 2)
+        self.assertIn('no answer within', r['skipped'][0]['detail'])
+        self.assertEqual(calls, 1, 'one wait for the prompt, not one per session')
+        self.assertLess(took, 4.5)
+        r, calls, _, _ = restore('fail')
+        self.assertEqual(sorted(s['reason'] for s in r['skipped']), ['launch-failed'] * 2)
+        self.assertEqual(calls, 2, 'other errors are not cached')
+
     def test_term_program_hint(self):
         """With no terminal in the process tree (CI, WSL), TERM_PROGRAM names the terminal."""
         if not (os.environ.get('CI') or os.environ.get('WSL_DISTRO_NAME')):
