@@ -18,13 +18,16 @@
                folder, in the shell it ran in. If that shell is missing, falls back
                to PowerShell 7, Windows PowerShell, then cmd.
     config     Show or set the default restore shell/terminal (-UseShell, -Terminal, -Reset).
+    clear      Delete the saved snapshot (the list of sessions, not the conversations).
+               Refuses (unrestored-snapshot) while it has sessions not yet restored,
+               unless -Force; -IncludeConfig also deletes the restore defaults.
 
   Compatible with Windows PowerShell 5.1 and PowerShell 7+.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('list', 'save', 'snapshots', 'restore', 'config')]
+    [ValidateSet('list', 'save', 'snapshots', 'restore', 'config', 'clear')]
     [string]$Command,
 
     # Plugin data dir (skills pass ${CLAUDE_PLUGIN_DATA}). Falls back when empty or unsubstituted.
@@ -55,6 +58,9 @@ param(
     [ValidateSet('', 'auto', 'wt', 'window')]
     [string]$Terminal = '',
     [switch]$Reset,
+
+    # clear: also delete the saved restore defaults (config.json).
+    [switch]$IncludeConfig,
 
     # Overrides, mainly for tests.
     [string]$ClaudeHome,
@@ -491,6 +497,36 @@ function Invoke-Snapshots {
     Write-Result ([ordered]@{ ok = $true; dataDir = $data.dir; snapshots = $list })
 }
 
+# Deletes the saved list of sessions (never the conversations themselves).
+function Invoke-Clear {
+    $data = Resolve-DataDir
+    $pendingSnap = Get-PendingSnapshot $data
+    if ($pendingSnap -and -not $Force) {
+        Stop-WithError 'unrestored-snapshot' "The snapshot from $($pendingSnap.createdAt) still has $($pendingSnap.pending.Count) session(s) that were never restored. Pass -Force to delete it anyway." @{ pendingSnapshot = $pendingSnap }
+    }
+    $removed = @()
+    $sessionCount = 0
+    foreach ($f in (Get-SnapshotFiles $data)) {
+        $o = Read-JsonFile $f.FullName
+        if ($o) { $sessionCount += @(Get-Prop $o 'sessions').Count }
+        Remove-Item -LiteralPath $f.FullName -Force
+        $removed += $f.Name
+    }
+    # Leftovers of an interrupted write.
+    foreach ($f in @(Get-ChildItem -LiteralPath $data.snapshots -Filter '*.tmp' -File)) { Remove-Item -LiteralPath $f.FullName -Force }
+    $configRemoved = $false
+    $cfgPath = Join-Path $data.dir 'config.json'
+    if ($IncludeConfig -and (Test-Path -LiteralPath $cfgPath)) { Remove-Item -LiteralPath $cfgPath -Force; $configRemoved = $true }
+    Write-Result ([ordered]@{
+            ok              = $true
+            dataDir         = $data.dir
+            removed         = $removed
+            removedSessions = $sessionCount
+            configRemoved   = $configRemoved
+            configKept      = (-not $IncludeConfig) -and (Test-Path -LiteralPath $cfgPath)
+        })
+}
+
 function Resolve-Exe([string]$override, [string[]]$names) {
     if ($override) { return $override }
     foreach ($n in $names) {
@@ -843,6 +879,7 @@ try {
         'snapshots' { Invoke-Snapshots }
         'restore' { Invoke-Restore }
         'config' { Invoke-Config }
+        'clear' { Invoke-Clear }
     }
 } catch {
     Stop-WithError 'unexpected' $_.Exception.Message

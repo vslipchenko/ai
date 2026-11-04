@@ -18,6 +18,9 @@ Linux counterpart of sessions.ps1: same subcommands, flags and JSON output
              terminal -> Windows Terminal (WSL) / system default / any installed
              terminal -> a detached tmux session.
   config     Show or set the default restore shell/terminal (-UseShell, -Terminal, -Reset).
+  clear      Delete the saved snapshot (the list of sessions, not the conversations).
+             Refuses (unrestored-snapshot) while it has sessions not yet restored,
+             unless -Force; -IncludeConfig also deletes the restore defaults.
 
 Standard library only; Python 3.8+.
 """
@@ -509,6 +512,31 @@ def cmd_snapshots(c):
     write_result({'ok': True, 'dataDir': data['dir'], 'snapshots': out})
 
 
+def cmd_clear(c):
+    """Deletes the saved list of sessions (never the conversations themselves)."""
+    data = c.data_dir()
+    pending = c.pending_snapshot(data)
+    if pending and not c.a.Force:
+        fail('unrestored-snapshot', 'The snapshot from %s still has %d session(s) that were never restored. Pass -Force to delete it anyway.'
+             % (pending['createdAt'], len(pending['pending'])), {'pendingSnapshot': pending})
+    removed, count = [], 0
+    for f in c.snapshot_files(data):
+        o = read_json(f)
+        if isinstance(o, dict):
+            count += len(o.get('sessions') or [])
+        os.remove(f)
+        removed.append(os.path.basename(f))
+    for f in glob.glob(os.path.join(glob.escape(data['snapshots']), '*.tmp')):  # interrupted writes
+        os.remove(f)
+    cfg = os.path.join(data['dir'], 'config.json')
+    config_removed = False
+    if c.a.IncludeConfig and os.path.isfile(cfg):
+        os.remove(cfg)
+        config_removed = True
+    write_result({'ok': True, 'dataDir': data['dir'], 'removed': removed, 'removedSessions': count,
+                  'configRemoved': config_removed, 'configKept': not c.a.IncludeConfig and os.path.isfile(cfg)})
+
+
 def cmd_config(c):
     data = c.data_dir()
     cfg = c.read_config(data)
@@ -821,7 +849,7 @@ def cmd_restore(c):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog='sessions.py', allow_abbrev=False)
-    p.add_argument('Command', choices=['list', 'save', 'snapshots', 'restore', 'config'])
+    p.add_argument('Command', choices=['list', 'save', 'snapshots', 'restore', 'config', 'clear'])
     p.add_argument('-DataDir', default='')
     p.add_argument('-CurrentSessionId', default='')
     p.add_argument('-Ids', default='')
@@ -833,6 +861,7 @@ def main(argv=None):
     p.add_argument('-UseShell', default='', choices=('', 'auto') + RESTORABLE_SHELLS)
     p.add_argument('-Terminal', default='', choices=TERMINAL_CHOICES)
     p.add_argument('-Reset', action='store_true')
+    p.add_argument('-IncludeConfig', action='store_true')
     # Overrides, mainly for tests.
     p.add_argument('-ClaudeHome', default='')
     p.add_argument('-ClaudeExe', default='')
@@ -842,7 +871,7 @@ def main(argv=None):
     c = Ctx(a)
     try:
         {'list': cmd_list, 'save': cmd_save, 'snapshots': cmd_snapshots, 'restore': cmd_restore,
-         'config': cmd_config}[a.Command](c)
+         'config': cmd_config, 'clear': cmd_clear}[a.Command](c)
     except SystemExit:
         raise
     except Exception as e:  # report, never a traceback

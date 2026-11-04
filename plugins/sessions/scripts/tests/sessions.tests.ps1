@@ -171,6 +171,30 @@ try {
     $r = Run @('save', '-ClaudeHome', $home1, '-DataDir', $one, '-Ids', $A)
     Assert ($r.ok -and (Count-Snaps) -eq 1) 'sessions that are open or gone count as settled'
 
+    Write-Host 'clear'
+    $clr = Join-Path $root 'clear'
+    $clrSnaps = Join-Path $clr 'snapshots'
+    $r = Run @('clear', '-ClaudeHome', $home1, '-DataDir', $clr)
+    Assert ($r.ok -and @($r.removed).Count -eq 0 -and $r.removedSessions -eq 0) 'clear with nothing saved is a no-op'
+    function Write-ClearSnap($extra) {
+        $s = [ordered]@{ version = 1; createdAt = '2026-01-01T00:00:00Z'; restoredAt = $null; restoredSessionIds = @()
+            sessions = @([ordered]@{ sessionId = $A; cwd = $projA; title = 'a' }, [ordered]@{ sessionId = $E; cwd = $projA; title = 'e' }) }
+        foreach ($k in $extra.Keys) { $s[$k] = $extra[$k] }
+        Write-Utf8 (Join-Path $clrSnaps 'snapshot-20260101-000000.json') (ConvertTo-Json $s -Depth 5)
+    }
+    Write-ClearSnap @{}
+    Write-Utf8 (Join-Path $clr 'config.json') '{"restoreShell":"cmd","restoreTerminal":null}'
+    $r = Run @('clear', '-ClaudeHome', $home1, '-DataDir', $clr)
+    Assert ($r.ok -eq $false -and $r.error -eq 'unrestored-snapshot' -and @($r.pendingSnapshot.pending).Count -eq 2) 'clear refuses an unrestored snapshot'
+    Assert (Test-Path (Join-Path $clrSnaps 'snapshot-20260101-000000.json')) 'refused clear keeps the snapshot'
+    $r = Run @('clear', '-ClaudeHome', $home1, '-DataDir', $clr, '-Force')
+    Assert ($r.ok -and @($r.removed).Count -eq 1 -and $r.removedSessions -eq 2) 'clear -Force deletes it'
+    Assert ($r.configKept -and -not $r.configRemoved -and (Test-Path (Join-Path $clr 'config.json'))) 'clear keeps restore defaults'
+    Write-ClearSnap @{ restoredAt = '2026-01-01T01:00:00Z'; settledSessionIds = @($A, $E) }
+    $r = Run @('clear', '-ClaudeHome', $home1, '-DataDir', $clr, '-IncludeConfig')
+    Assert ($r.ok -and @($r.removed).Count -eq 1 -and $r.configRemoved -and -not (Test-Path (Join-Path $clr 'config.json'))) 'restored snapshot clears without -Force; -IncludeConfig drops defaults'
+    Assert (@(Get-ChildItem $clrSnaps).Count -eq 0) 'nothing left after clear'
+
     Write-Host 'snapshots'
     $r = Run @('snapshots', '-ClaudeHome', $home1, '-DataDir', $data)
     Assert ($r.ok -and @($r.snapshots).Count -eq 1 -and $r.snapshots[0].count -eq 2) 'summarises snapshots'

@@ -327,6 +327,28 @@ class SessionsTests(unittest.TestCase):
         r = run('save', *self.h(), '-DataDir', one, '-Ids', A)
         self.assertTrue(r['ok'])
 
+    def test_clear(self):
+        e = self.env
+        clr = os.path.join(e.root, 'clear')
+        snaps = os.path.join(clr, 'snapshots')
+        r = run('clear', *self.h(), '-DataDir', clr)
+        self.assertEqual((r['ok'], r['removed'], r['removedSessions']), (True, [], 0), 'nothing saved is a no-op')
+        two = [{'sessionId': A, 'cwd': e.proj, 'title': 'a'}, {'sessionId': E, 'cwd': e.proj, 'title': 'e'}]
+        e.snapshot('snapshot-20260101-000000.json', two, data=clr)
+        write(os.path.join(clr, 'config.json'), '{"restoreShell":"sh","restoreTerminal":null}')
+        r = run('clear', *self.h(), '-DataDir', clr)
+        self.assertEqual(r['error'], 'unrestored-snapshot')
+        self.assertEqual(len(r['pendingSnapshot']['pending']), 2)
+        self.assertEqual(len(os.listdir(snaps)), 1, 'refused clear keeps the snapshot')
+        r = run('clear', *self.h(), '-DataDir', clr, '-Force')
+        self.assertEqual((r['ok'], len(r['removed']), r['removedSessions']), (True, 1, 2))
+        self.assertTrue(r['configKept'] and not r['configRemoved'] and os.path.isfile(os.path.join(clr, 'config.json')))
+        e.snapshot('snapshot-20260101-000000.json', two, data=clr, restoredAt='x', settledSessionIds=[A, E])
+        r = run('clear', *self.h(), '-DataDir', clr, '-IncludeConfig')
+        self.assertEqual((r['ok'], len(r['removed']), r['configRemoved']), (True, 1, True), 'restored clears without -Force')
+        self.assertFalse(os.path.exists(os.path.join(clr, 'config.json')))
+        self.assertEqual(os.listdir(snaps), [])
+
     def test_snapshots(self):
         e = self.env
         data = os.path.join(e.root, 'snaps-data')

@@ -33,11 +33,12 @@ Then restart Claude Code.
 |---|---|
 | `save` | List live Claude Code sessions, let you pick, and store them, replacing the previously saved set. |
 | `restore` | Reopen every saved session, each with `claude --resume <id>` in its folder and original terminal. |
+| `clear` | Delete the saved set without restoring it (only the list; the conversations stay). Asks first if some were never restored. |
 
 Both respond to natural language, e.g. *"save my sessions, I'm rebooting"*,
 *"restore my sessions"*, *"restore just the
 API one"*, *"restore them in cmd this time"*, *"restore them in tmux"*,
-*"always restore in Git Bash"*.
+*"always restore in Git Bash"*, *"clear my saved sessions"*.
 
 ## Where sessions reopen
 
@@ -137,7 +138,7 @@ python3 "$p/scripts/sessions.py" restore
 
 Commands: `list`, `save -Ids <id,...> [-Force]`, `snapshots`,
 `restore [-Ids <id,...>] [-UseShell <shell>] [-Terminal <terminal>] [-DryRun]`,
-`config [-UseShell ...] [-Terminal ...] [-Reset]`.
+`config [-UseShell ...] [-Terminal ...] [-Reset]`, `clear [-Force] [-IncludeConfig]`.
 
 ## License
 

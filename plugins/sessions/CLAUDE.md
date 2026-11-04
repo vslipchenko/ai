@@ -3,11 +3,11 @@
 (Only read when working in this repo; no effect on the installed plugin.)
 
 ## Layout
-- `skills/save/SKILL.md`, `skills/restore/SKILL.md` — interaction only (listing,
+- `skills/save/SKILL.md`, `skills/restore/SKILL.md`, `skills/clear/SKILL.md` — interaction only (listing,
   asking, reporting); they pick the script by OS.
 - `scripts/sessions.ps1` (Windows) and `scripts/sessions.py` (Linux) — all
   discovery, snapshot I/O and terminal launching. Same subcommands
-  `list | save | snapshots | restore | config`, same `-Flag` names, same JSON
+  `list | save | snapshots | restore | config | clear`, same `-Flag` names, same JSON
   (one line on stdout) and the same snapshot/config files. **Keep them in step:**
   a behaviour change in one needs the same change (and test) in the other.
 - Exactly one snapshot is kept. `save` deletes all others after writing, but
