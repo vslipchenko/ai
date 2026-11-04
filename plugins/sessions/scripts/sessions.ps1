@@ -18,6 +18,13 @@
                folder, in the shell it ran in. If that shell is missing, falls back
                to PowerShell 7, Windows PowerShell, then cmd.
     config     Show or set the default restore shell/terminal (-UseShell, -Terminal, -Reset).
+    manage     -Enable: start a new snapshot with the sessions in -Ids (may be empty) and
+               turn on automatic tracking; -Disable: turn it off (the snapshot stays);
+               neither: status. Refuses to replace a snapshot with unrestored
+               sessions unless -Force.
+    track      Hook entry point (SessionStart / SessionEnd JSON on stdin): while
+               tracking is on, adds or updates the session, or drops it when it was
+               exited on purpose (/exit, logout, /clear, /resume to another session).
     clear      Delete the saved snapshot (the list of sessions, not the conversations).
                Refuses (unrestored-snapshot) while it has sessions not yet restored,
                unless -Force; -IncludeConfig also deletes the restore defaults.
@@ -27,7 +34,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('list', 'save', 'snapshots', 'restore', 'config', 'clear')]
+    [ValidateSet('list', 'save', 'snapshots', 'restore', 'config', 'clear', 'manage', 'track')]
     [string]$Command,
 
     # Plugin data dir (skills pass ${CLAUDE_PLUGIN_DATA}). Falls back when empty or unsubstituted.
@@ -62,7 +69,12 @@ param(
     # clear: also delete the saved restore defaults (config.json).
     [switch]$IncludeConfig,
 
+    # manage: turn automatic tracking on (with -Ids as the starting list) or off; neither = status.
+    [switch]$Enable,
+    [switch]$Disable,
+
     # Overrides, mainly for tests.
+    [string]$ClaudePid,
     [string]$ClaudeHome,
     [string]$ClaudeExe,
     [string]$PowerShellExe,
@@ -97,6 +109,10 @@ function Stop-WithError([string]$code, [string]$message, $extra = @{}) {
 
 function Get-Prop($obj, [string]$name) {
     if ($null -eq $obj) { return $null }
+    if ($obj -is [System.Collections.IDictionary]) {
+        if ($obj.Contains($name)) { return $obj[$name] }
+        return $null
+    }
     $p = $obj.PSObject.Properties[$name]
     if ($p) { return $p.Value }
     return $null
@@ -233,6 +249,16 @@ function New-SessionEntry([string]$sessionId, [string]$cwd, [string]$registryNam
 
 # ---------------------------------------------------------------- discovery
 
+# A session someone works in at a terminal. Headless runs (`claude -p`, the SDK) report
+# kind "interactive" too, but their entrypoint is "sdk-…".
+function Test-InteractiveEntry($o) {
+    $kind = [string](Get-Prop $o 'kind')
+    $entry = [string](Get-Prop $o 'entrypoint')
+    if ($kind -and $kind -ne 'interactive') { return $false }
+    if ($entry -like 'sdk*') { return $false }
+    return $true
+}
+
 function Test-ProcessLive($procId, $procStart) {
     $p = Get-Process -Id ([int]$procId) -ErrorAction SilentlyContinue
     if (-not $p) { return $false }
@@ -321,7 +347,7 @@ function Get-LiveSessions([bool]$includeNonInteractive) {
             $usable++
             if (-not (Test-ProcessLive $procId (Get-Prop $o 'procStart'))) { continue }
             $kind = Get-Prop $o 'kind'
-            if ($kind -and $kind -ne 'interactive' -and -not $includeNonInteractive) { $hidden++; continue }
+            if (-not (Test-InteractiveEntry $o) -and -not $includeNonInteractive) { $hidden++; continue }
             $sid = $sid.ToLowerInvariant()
             if ($seen.ContainsKey($sid)) { continue }
             $seen[$sid] = $true
@@ -420,6 +446,31 @@ function Get-PendingSnapshot($data) {
     return $null
 }
 
+function Test-Tracking($data) { return (Test-Path -LiteralPath (Join-Path $data.dir 'tracking')) }
+
+# Serialises read-modify-write of the snapshot between this script, hooks of other
+# sessions (several can start at once during a restore) and restore itself.
+function Enter-SnapshotLock($data) {
+    $path = Join-Path $data.dir 'snapshot.lock'
+    for ($i = 0; $i -lt 100; $i++) {
+        try {
+            $fs = [System.IO.File]::Open($path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+            $fs.Dispose()
+            return $path
+        } catch {
+            # A lock left behind by a killed process.
+            try {
+                $age = (Get-Date) - (Get-Item -LiteralPath $path -ErrorAction Stop).LastWriteTime
+                if ($age.TotalSeconds -gt 30) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+            } catch { }
+            Start-Sleep -Milliseconds 100
+        }
+    }
+    Stop-WithError 'locked' 'The snapshot is busy (another session is updating it); try again.'
+}
+
+function Exit-SnapshotLock($path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+
 function Invoke-List {
     $r = Get-LiveSessions ([bool]$IncludeNonInteractive)
     $data = Resolve-DataDir
@@ -429,17 +480,15 @@ function Invoke-List {
             sessions             = $r.sessions
             hiddenNonInteractive = $r.hiddenNonInteractive
             pendingSnapshot      = Get-PendingSnapshot $data
+            managing             = (Test-Tracking $data)
         })
 }
 
-function Invoke-Save {
-    $idList = Get-IdList
-    if ($idList.Count -eq 0) { Stop-WithError 'no-ids' 'Pass the session ids to save with -Ids.' }
-    $data = Resolve-DataDir
+# Snapshot entries for the given ids (live, or ended but still resumable), in opening order.
+function Get-SnapshotEntries($idList) {
     $live = Get-LiveSessions $true
     $byId = @{}
     foreach ($s in $live.sessions) { $byId[$s.sessionId] = $s }
-
     $saved = @()
     $missing = @()
     foreach ($id in $idList) {
@@ -450,48 +499,210 @@ function Invoke-Save {
             $t = New-SessionEntry $id $null $null @{}
             if ($t.transcript -and $t.cwd) { $e = $t }
         }
-        if ($e) {
-            $s = [ordered]@{ sessionId = $e.sessionId; cwd = $e.cwd; title = $e.title; lastPrompt = $e.lastPrompt
-                shell = $null; shellPath = $null; host = $null; startedAt = $null }
-            foreach ($k in @('shell', 'shellPath', 'host', 'startedAt')) { if ($e.Contains($k)) { $s[$k] = $e[$k] } }
-            $saved += $s
-        } else { $missing += $id }
+        if ($e) { $saved += (ConvertTo-SnapshotEntry $e) } else { $missing += $id }
     }
-    if ($saved.Count -eq 0) { Stop-WithError 'nothing-saved' 'None of the given sessions could be found.' }
     # Stored in the order the sessions were opened, whatever order they were picked in.
     $saved = Sort-ByOpened $saved { param($s) $s.startedAt }
+    return [ordered]@{ saved = $saved; missing = $missing }
+}
 
-    # Only one snapshot is kept. Never replace one with sessions still waiting to be restored unless told to.
-    $pendingSnap = Get-PendingSnapshot $data
-    if ($pendingSnap -and -not $Force) {
-        Stop-WithError 'unrestored-snapshot' "The snapshot from $($pendingSnap.createdAt) still has $($pendingSnap.pending.Count) session(s) that were never restored. Pass -Force to replace it." @{ pendingSnapshot = $pendingSnap }
-    }
+function ConvertTo-SnapshotEntry($e) {
+    $s = [ordered]@{ sessionId = $e.sessionId; cwd = $e.cwd; title = $e.title; lastPrompt = $e.lastPrompt
+        shell = $null; shellPath = $null; host = $null; startedAt = $null }
+    foreach ($k in @('shell', 'shellPath', 'host', 'startedAt')) { if ($e.Contains($k)) { $s[$k] = $e[$k] } }
+    return $s
+}
 
+# Writes a new snapshot (the only one kept) and removes all others.
+function Write-NewSnapshot($data, $saved, [bool]$managed) {
     $now = Get-Date
     $path = Join-Path $data.snapshots ('snapshot-' + $now.ToString('yyyyMMdd-HHmmss') + '.json')
-    Write-JsonFile $path ([ordered]@{
-            version            = 1
-            createdAt          = $now.ToUniversalTime().ToString('o')
-            restoredAt         = $null
-            restoredSessionIds = @()
-            settledSessionIds  = @()
-            sessions           = $saved
-        })
-
+    $snap = [ordered]@{
+        version            = 1
+        createdAt          = $now.ToUniversalTime().ToString('o')
+        restoredAt         = $null
+        restoredSessionIds = @()
+        settledSessionIds  = @()
+        sessions           = @($saved)
+    }
+    if ($managed) { $snap.managed = $true }
     $replaced = 0
+    if (Test-Path -LiteralPath $path) { $replaced = 1 }   # an older snapshot from the same second
+    Write-JsonFile $path $snap
     foreach ($f in (Get-SnapshotFiles $data)) {
         if ($f.FullName -ne $path) { Remove-Item -LiteralPath $f.FullName -Force; $replaced++ }
     }
+    return [ordered]@{ path = $path; replaced = $replaced }
+}
 
+function Assert-NoPendingSnapshot($data, [string]$verb) {
+    # Never replace a snapshot with sessions still waiting to be restored unless told to.
+    $pendingSnap = Get-PendingSnapshot $data
+    if ($pendingSnap -and -not $Force) {
+        Stop-WithError 'unrestored-snapshot' "The snapshot from $($pendingSnap.createdAt) still has $($pendingSnap.pending.Count) session(s) that were never restored. Pass -Force to $verb it anyway." @{ pendingSnapshot = $pendingSnap }
+    }
+}
+
+function Invoke-Save {
+    $idList = Get-IdList
+    if ($idList.Count -eq 0) { Stop-WithError 'no-ids' 'Pass the session ids to save with -Ids.' }
+    $data = Resolve-DataDir
+    if (Test-Tracking $data) {
+        Stop-WithError 'managing' 'Sessions are being managed (saved automatically). Turn that off first (manage -Disable) to save a list by hand.'
+    }
+    $entries = Get-SnapshotEntries $idList
+    if ($entries.saved.Count -eq 0) { Stop-WithError 'nothing-saved' 'None of the given sessions could be found.' }
+    Assert-NoPendingSnapshot $data 'replace'
+
+    $lock = Enter-SnapshotLock $data
+    try { $w = Write-NewSnapshot $data $entries.saved $false } finally { Exit-SnapshotLock $lock }
     Write-Result ([ordered]@{
             ok              = $true
-            snapshot        = $path
+            snapshot        = $w.path
             dataDir         = $data.dir
             dataDirFallback = $data.fallback
-            saved           = $saved
-            missing         = $missing
-            replaced        = $replaced
+            saved           = $entries.saved
+            missing         = $entries.missing
+            replaced        = $w.replaced
         })
+}
+
+function Get-SnapshotSummary($data) {
+    $files = @(Get-SnapshotFiles $data)
+    if ($files.Count -eq 0) { return $null }
+    $o = Read-JsonFile $files[0].FullName
+    if (-not $o) { return $null }
+    $items = @(Get-Prop $o 'sessions')
+    return [ordered]@{
+        file      = $files[0].Name
+        createdAt = Get-Prop $o 'createdAt'
+        managed   = [bool](Get-Prop $o 'managed')
+        count     = $items.Count
+        sessions  = @($items | ForEach-Object { [ordered]@{ sessionId = (Get-Prop $_ 'sessionId'); title = (Get-Prop $_ 'title'); cwd = (Get-Prop $_ 'cwd') } })
+    }
+}
+
+function Invoke-Manage {
+    $data = Resolve-DataDir
+    $flag = Join-Path $data.dir 'tracking'
+    if ($Enable -and $Disable) { Stop-WithError 'bad-args' 'Pass -Enable or -Disable, not both.' }
+    if ($Enable) {
+        $idList = Get-IdList
+        $entries = [ordered]@{ saved = @(); missing = @() }
+        if ($idList.Count -gt 0) { $entries = Get-SnapshotEntries $idList }
+        # Re-enabling while already managing keeps going with a fresh list; otherwise protect unrestored work.
+        if (-not (Test-Tracking $data)) { Assert-NoPendingSnapshot $data 'replace' }
+        $lock = Enter-SnapshotLock $data
+        try {
+            $w = Write-NewSnapshot $data $entries.saved $true
+            [System.IO.File]::WriteAllText($flag, (Get-Date).ToUniversalTime().ToString('o'), $Utf8NoBom)
+        } finally { Exit-SnapshotLock $lock }
+        Write-Result ([ordered]@{ ok = $true; managing = $true; snapshot = $w.path; saved = $entries.saved
+                missing = $entries.missing; replaced = $w.replaced; dataDir = $data.dir })
+        return
+    }
+    if ($Disable) {
+        $was = Test-Path -LiteralPath $flag
+        Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
+        Write-Result ([ordered]@{ ok = $true; managing = $false; wasManaging = $was; snapshot = (Get-SnapshotSummary $data) })
+        return
+    }
+    $since = $null
+    if (Test-Path -LiteralPath $flag) { $since = ([System.IO.File]::ReadAllText($flag)).Trim() }
+    Write-Result ([ordered]@{ ok = $true; managing = [bool]$since; since = $since; snapshot = (Get-SnapshotSummary $data) })
+}
+
+# The list without one id, always as an array (an empty array passed through the
+# pipeline would come back as $null and be written as {} in PowerShell 5.1).
+function Remove-IdFromList($list, [string]$sid) {
+    $kept = New-Object System.Collections.ArrayList
+    foreach ($x in @($list)) { if ($x -and ([string]$x).ToLowerInvariant() -ne $sid) { [void]$kept.Add([string]$x) } }
+    return , $kept.ToArray()
+}
+
+# Hook entry point. Never fails loudly: a hook must not disturb the session.
+function Invoke-Track {
+    $data = Resolve-DataDir
+    if (-not (Test-Tracking $data)) { Write-Result ([ordered]@{ ok = $true; tracked = $false; why = 'not-managing' }); return }
+    $raw = [Console]::In.ReadToEnd()
+    $ev = ConvertFrom-JsonSafe $raw
+    $sid = ([string](Get-Prop $ev 'session_id')).ToLowerInvariant()
+    $event = [string](Get-Prop $ev 'hook_event_name')
+    if ($sid -notmatch $GuidRx) { Write-Result ([ordered]@{ ok = $true; tracked = $false; why = 'no-session' }); return }
+
+    $action = $null
+    $entry = $null
+    if ($event -eq 'SessionStart') {
+        $procId = $ClaudePid
+        if (-not $procId) { $procId = $env:CLAUDE_PID }
+        $reg = $null
+        if ($procId) { $reg = Read-JsonFile (Join-Path $ClaudeHome "sessions\$procId.json") }
+        if ($reg -and -not (Test-InteractiveEntry $reg)) {
+            Write-Result ([ordered]@{ ok = $true; tracked = $false; why = 'non-interactive' }); return
+        }
+        $cwd = [string](Get-Prop $ev 'cwd')
+        if (-not $cwd -and $reg) { $cwd = [string](Get-Prop $reg 'cwd') }
+        $extra = [ordered]@{ startedAt = (Get-Date).ToUniversalTime().ToString('o') }
+        if ($reg -and (Get-Prop $reg 'startedAt')) { $extra.startedAt = [DateTimeOffset]::FromUnixTimeMilliseconds([long](Get-Prop $reg 'startedAt')).ToString('o') }
+        if ($procId) {
+            $li = Get-LaunchInfo ([int]$procId)
+            $extra.shell = $li.shell; $extra.shellPath = $li.shellPath; $extra.host = $li.host
+        }
+        $name = $null
+        if ($reg) { $name = Get-Prop $reg 'name' }
+        $entry = ConvertTo-SnapshotEntry (New-SessionEntry $sid $cwd $name $extra)
+        # Which process runs it: a process that later starts another session (e.g. after
+        # switching renderer) replaces its earlier entry, which never sends a SessionEnd.
+        if ($procId) {
+            $entry.pid = [int]$procId
+            $entry.procStart = [string](Get-Prop $reg 'procStart')
+        }
+        $action = 'upsert'
+    } elseif ($event -eq 'SessionEnd') {
+        # Exited on purpose (or replaced by /clear or /resume): drop it. A closed window, killed
+        # process, reboot or crash ("other", or no hook at all) keeps it.
+        if (@('prompt_input_exit', 'logout', 'clear', 'resume') -contains [string](Get-Prop $ev 'reason')) { $action = 'remove' }
+    }
+    if (-not $action) { Write-Result ([ordered]@{ ok = $true; tracked = $false; why = 'kept' }); return }
+
+    $lock = Enter-SnapshotLock $data
+    try {
+        $files = @(Get-SnapshotFiles $data)
+        $snap = $null
+        if ($files.Count -gt 0) { $snap = Read-JsonFile $files[0].FullName; $path = $files[0].FullName }
+        if (-not $snap) {
+            if ($action -eq 'remove') { Write-Result ([ordered]@{ ok = $true; tracked = $false; why = 'no-snapshot' }); return }
+            $w = Write-NewSnapshot $data @() $true
+            $path = $w.path
+            $snap = Read-JsonFile $path
+        }
+        $items = @(@(Get-Prop $snap 'sessions') | Where-Object { ([string](Get-Prop $_ 'sessionId')).ToLowerInvariant() -ne $sid })
+        if ($action -eq 'upsert' -and $entry.Contains('pid')) {
+            $items = @($items | Where-Object {
+                    -not ((Get-Prop $_ 'pid') -and [string](Get-Prop $_ 'pid') -eq [string]$entry.pid -and
+                        [string](Get-Prop $_ 'procStart') -eq [string]$entry.procStart) })
+        }
+        if ($action -eq 'upsert') {
+            # Keep the original opening time of a session that is resumed.
+            $old = @(@(Get-Prop $snap 'sessions') | Where-Object { ([string](Get-Prop $_ 'sessionId')).ToLowerInvariant() -eq $sid })
+            if ($old.Count -gt 0 -and (Get-Prop $old[0] 'startedAt')) { $entry.startedAt = [string](Get-Prop $old[0] 'startedAt') }
+            $items += $entry
+        }
+        # A session (re)added by its own start is live again: it counts as pending, not settled.
+        # (Sort-ByOpened already returns an array; wrapping it in @() again would nest it.)
+        $sortedItems = Sort-ByOpened $items { param($s) Get-Prop $s 'startedAt' }
+        $out = [ordered]@{
+            version            = Get-Prop $snap 'version'
+            createdAt          = Get-Prop $snap 'createdAt'
+            restoredAt         = Get-Prop $snap 'restoredAt'
+            restoredSessionIds = Remove-IdFromList (Get-Prop $snap 'restoredSessionIds') $sid
+            settledSessionIds  = Remove-IdFromList (Get-Prop $snap 'settledSessionIds') $sid
+            sessions           = $sortedItems
+        }
+        $out.managed = $true
+        Write-JsonFile $path $out
+    } finally { Exit-SnapshotLock $lock }
+    Write-Result ([ordered]@{ ok = $true; tracked = $true; action = $action; sessionId = $sid; snapshot = $path })
 }
 
 function Invoke-Snapshots {
@@ -524,14 +735,17 @@ function Invoke-Clear {
     }
     $removed = @()
     $sessionCount = 0
-    foreach ($f in (Get-SnapshotFiles $data)) {
-        $o = Read-JsonFile $f.FullName
-        if ($o) { $sessionCount += @(Get-Prop $o 'sessions').Count }
-        Remove-Item -LiteralPath $f.FullName -Force
-        $removed += $f.Name
-    }
-    # Leftovers of an interrupted write.
-    foreach ($f in @(Get-ChildItem -LiteralPath $data.snapshots -Filter '*.tmp' -File)) { Remove-Item -LiteralPath $f.FullName -Force }
+    $lock = Enter-SnapshotLock $data
+    try {
+        foreach ($f in (Get-SnapshotFiles $data)) {
+            $o = Read-JsonFile $f.FullName
+            if ($o) { $sessionCount += @(Get-Prop $o 'sessions').Count }
+            Remove-Item -LiteralPath $f.FullName -Force
+            $removed += $f.Name
+        }
+        # Leftovers of an interrupted write.
+        foreach ($f in @(Get-ChildItem -LiteralPath $data.snapshots -Filter '*.tmp' -File)) { Remove-Item -LiteralPath $f.FullName -Force }
+    } finally { Exit-SnapshotLock $lock }
     $configRemoved = $false
     $cfgPath = Join-Path $data.dir 'config.json'
     if ($IncludeConfig -and (Test-Path -LiteralPath $cfgPath)) { Remove-Item -LiteralPath $cfgPath -Force; $configRemoved = $true }
@@ -542,6 +756,8 @@ function Invoke-Clear {
             removedSessions = $sessionCount
             configRemoved   = $configRemoved
             configKept      = (-not $IncludeConfig) -and (Test-Path -LiteralPath $cfgPath)
+            # Clearing doesn't stop managing: new and resumed sessions keep being added.
+            managing        = (Test-Tracking $data)
         })
 }
 
@@ -879,19 +1095,27 @@ function Invoke-Restore {
 
         # Settled = opened now, or can never be opened; `save` may replace a snapshot once all are settled.
         $permanent = @($skipped | Where-Object { $_.reason -ne 'no-shell' } | ForEach-Object { $_.sessionId })
-        $restored = @(@(Get-Prop $snap 'restoredSessionIds') | Where-Object { $_ }) + @($launch | ForEach-Object { $_.sessionId })
-        $settled = @(@(Get-Prop $snap 'settledSessionIds') | Where-Object { $_ }) + $restored + $permanent
         if ($launch.Count -gt 0 -or $permanent.Count -gt 0) {
-            $restoredAt = Get-Prop $snap 'restoredAt'
-            if ($launch.Count -gt 0) { $restoredAt = (Get-Date).ToUniversalTime().ToString('o') }
-            Write-JsonFile $snapPath ([ordered]@{
+            # Re-read under the lock: while sessions start, their hooks may already be updating it.
+            $lock = Enter-SnapshotLock $data
+            try {
+                $cur = Read-JsonFile $snapPath
+                if ($cur) { $snap = $cur }
+                $restored = @(@(Get-Prop $snap 'restoredSessionIds') | Where-Object { $_ }) + @($launch | ForEach-Object { $_.sessionId })
+                $settled = @(@(Get-Prop $snap 'settledSessionIds') | Where-Object { $_ }) + $restored + $permanent
+                $restoredAt = Get-Prop $snap 'restoredAt'
+                if ($launch.Count -gt 0) { $restoredAt = (Get-Date).ToUniversalTime().ToString('o') }
+                $out = [ordered]@{
                     version            = Get-Prop $snap 'version'
                     createdAt          = Get-Prop $snap 'createdAt'
                     restoredAt         = $restoredAt
                     restoredSessionIds = @($restored | Select-Object -Unique)
                     settledSessionIds  = @($settled | Select-Object -Unique)
                     sessions           = @(Get-Prop $snap 'sessions')
-                })
+                }
+                if (Get-Prop $snap 'managed') { $out.managed = $true }
+                Write-JsonFile $snapPath $out
+            } finally { Exit-SnapshotLock $lock }
         }
     }
 
@@ -913,6 +1137,8 @@ try {
         'restore' { Invoke-Restore }
         'config' { Invoke-Config }
         'clear' { Invoke-Clear }
+        'manage' { Invoke-Manage }
+        'track' { Invoke-Track }
     }
 } catch {
     Stop-WithError 'unexpected' $_.Exception.Message

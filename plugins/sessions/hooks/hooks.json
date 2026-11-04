@@ -1,0 +1,28 @@
+{
+  "description": "Session manager: while managing is on (the `manage` skill), add every new or resumed Claude Code session to the saved list and drop the ones exited on purpose. Does nothing (exits at once) while managing is off.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"$CLAUDE_PLUGIN_DATA/tracking\" ] || exit 0; case \"$(uname -s)\" in MINGW*|MSYS*|CYGWIN*) powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$CLAUDE_PLUGIN_ROOT/scripts/sessions.ps1\" track -DataDir \"$CLAUDE_PLUGIN_DATA\" ;; *) python3 \"$CLAUDE_PLUGIN_ROOT/scripts/sessions.py\" track -DataDir \"$CLAUDE_PLUGIN_DATA\" ;; esac >/dev/null 2>&1; exit 0",
+            "async": true,
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"$CLAUDE_PLUGIN_DATA/tracking\" ] || exit 0; case \"$(uname -s)\" in MINGW*|MSYS*|CYGWIN*) powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$CLAUDE_PLUGIN_ROOT/scripts/sessions.ps1\" track -DataDir \"$CLAUDE_PLUGIN_DATA\" ;; *) python3 \"$CLAUDE_PLUGIN_ROOT/scripts/sessions.py\" track -DataDir \"$CLAUDE_PLUGIN_DATA\" ;; esac >/dev/null 2>&1; exit 0",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -41,7 +41,7 @@ carries `error` and `message` — report the message and stop.
 
 Result: `sessions[]` with `sessionId`, `cwd`, `title`, `lastPrompt`,
 `isCurrent`, `shell` and `host`, plus `source`,
-`hiddenNonInteractive` and `pendingSnapshot`. `shell` and `host` are stored
+`hiddenNonInteractive`, `pendingSnapshot` and `managing`. `shell` and `host` are stored
 with the snapshot so `restore` reopens each session in the same kind of
 terminal:
 - Windows — `shell`: `gitbash` / `pwsh` / `powershell` / `cmd`; `host`: `wt` /
@@ -55,6 +55,15 @@ Only one snapshot is kept: saving replaces the previous one. When the previous
 one still has sessions that were never restored, `pendingSnapshot` describes it
 (`createdAt`, `count`, `pending[]` with `title` and `cwd`); otherwise it is null.
 
+- `managing` true (the session manager — the `manage` skill — is keeping the
+  list up to date automatically) → **before anything else**, ask one
+  single-select question (header `Manager`): "The session manager is already
+  saving your sessions automatically. Turn it off and save a list by hand
+  instead?" Options: `Turn it off and save` / `Keep the manager`. On Keep, save
+  nothing, say the list is already being kept up to date, and stop. On Turn it
+  off: run `... manage -DataDir "${CLAUDE_PLUGIN_DATA}" -Disable`, skip the
+  `pendingSnapshot` question below (they already chose to replace the managed
+  list) and add `-Force` to the save in Step 3.
 - `pendingSnapshot` set → **before anything else**, ask one single-select
   question (header `Replace?`): "Your saved sessions from <createdAt in local
   time> haven't all been restored yet (<pending titles>). Saving now replaces

@@ -65,11 +65,15 @@ Result: `snapshots[]` (normally one) with `createdAt`, `restoredAt`, `count`,
 - `-IncludeConfig` — only if the user asked to reset the restore defaults too.
 
 Result: `removed[]` (snapshot files), `removedSessions` (how many sessions were
-in them), `configRemoved`, `configKept` (defaults exist and were left alone).
+in them), `configRemoved`, `configKept` (defaults exist and were left alone),
+`managing` (the session manager is on).
 
 Report in plain text, briefly:
 - what was deleted, e.g. "Deleted the saved list of 5 sessions from 11:05.";
 - that the conversations are still there and can be resumed individually;
 - if `configKept`: that the restore defaults were kept (and that they can ask
   to reset them); if `configRemoved`: that they were reset;
-- if nothing was saved: say so.
+- if nothing was saved: say so;
+- if `managing` is true: that the session manager is still on, so new and
+  resumed sessions will keep being added (to stop it: "stop managing
+  sessions").

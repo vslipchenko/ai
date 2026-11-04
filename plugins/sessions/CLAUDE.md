@@ -3,11 +3,11 @@
 (Only read when working in this repo; no effect on the installed plugin.)
 
 ## Layout
-- `skills/save/SKILL.md`, `skills/restore/SKILL.md`, `skills/clear/SKILL.md` (+ `skills/remove/SKILL.md`, a slash-only alias that defers to `clear`; skills have no alias field) — interaction only (listing,
+- `skills/save/SKILL.md`, `skills/restore/SKILL.md`, `skills/clear/SKILL.md`, `skills/manage/SKILL.md` (+ `skills/remove/SKILL.md`, a slash-only alias that defers to `clear`; skills have no alias field) — interaction only (listing,
   asking, reporting); they pick the script by OS.
 - `scripts/sessions.ps1` (Windows) and `scripts/sessions.py` (Linux) — all
   discovery, snapshot I/O and terminal launching. Same subcommands
-  `list | save | snapshots | restore | config | clear`, same `-Flag` names, same JSON
+  `list | save | snapshots | restore | config | clear | manage | track`, same `-Flag` names, same JSON
   (one line on stdout) and the same snapshot/config files. **Keep them in step:**
   a behaviour change in one needs the same change (and test) in the other.
 - Exactly one snapshot is kept. `save` deletes all others after writing, but
@@ -21,6 +21,26 @@
   stores them that way whatever order they were picked in, and `restore` reopens
   them that way (wt tabs left to right; separate windows one by one with a short
   pause). Snapshots without `startedAt` keep their stored order.
+- Session manager (`manage` skill): `manage -Enable` writes a fresh snapshot
+  (`"managed": true`) and the flag file `<data>/tracking`; `hooks/hooks.json`
+  runs `track` on `SessionStart` (async) and `SessionEnd`. The hook command
+  checks the flag file in bash first (cheap no-op when off), picks the script
+  with `uname` (hooks run in Git Bash on Windows), and discards output — a
+  `SessionStart` hook's stdout would otherwise be added to the session's context.
+  `track` reads the hook JSON on stdin and uses `$CLAUDE_PID` to find the
+  session's registry file (shell/terminal, start time, `entrypoint`). Rules:
+  start/resume/clear/compact → upsert (keep the original `startedAt`, un-settle
+  it); end with `prompt_input_exit` / `logout` / `clear` / `resume` → remove;
+  `other` (window closed, killed, reboot) → keep. Headless sessions report
+  `kind: interactive` but `entrypoint: sdk-*` — never listed or tracked.
+  `save` is refused while managing (`error: managing`).
+- All snapshot read-modify-writes (track, save, clear, manage, restore's marking)
+  go through the snapshot lock (`snapshot.lock`; O_EXCL file on Windows with a
+  30 s stale timeout, `flock` on Linux); restore re-reads the file under the lock
+  before marking it, because hooks of the sessions it just opened may have
+  changed it.
+- PowerShell: `Sort-ByOpened` returns its array with `return ,`; assign it
+  directly — wrapping the call in `@()` nests the array (`"sessions": [[…]]`).
 - Tests: `scripts/tests/sessions.tests.ps1` (Windows, no Pester) and
   `scripts/tests/test_sessions.py` (Linux, stdlib unittest).
 

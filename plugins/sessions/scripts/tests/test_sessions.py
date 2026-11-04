@@ -14,6 +14,8 @@ import tempfile
 import time
 import unittest
 
+# These tests may run inside a Claude session: don't let its process id leak into simulated hooks.
+os.environ.pop('CLAUDE_PID', None)
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(os.path.dirname(HERE), 'sessions.py')
 LAUNCH = os.environ.get('SESSIONS_LAUNCH') == '1'
@@ -376,6 +378,96 @@ class SessionsTests(unittest.TestCase):
                                   {'sessionId': h1, 'cwd': e.proj, 'title': 'one'}], data=data)
         r = run('restore', *self.h(), '-DataDir', data, '-DryRun', '-Snapshot', 'order', '-ClaudeExe', '/x/claude')
         self.assertEqual([l['sessionId'] for l in r['launched']], [h2, h1], 'no start times: stored order kept')
+
+    def test_manage_and_track(self):
+        e = self.env
+        home = os.path.join(e.root, 'claude-track')
+        mg = os.path.join(e.root, 'manage')
+        snaps = os.path.join(mg, 'snapshots')
+        p_cli = e.spawn([e.fake_claude_bin, '300'])
+        p_sdk = e.spawn([e.fake_claude_bin, '300'])
+        for p, sid, entry, name, at in ((p_cli, A, 'cli', 'Session A', 1793722000000),
+                                        (p_sdk, B, 'sdk-cli', 'Headless', 1793722060000)):
+            write(os.path.join(home, 'sessions', '%d.json' % p.pid), json.dumps(
+                {'pid': p.pid, 'sessionId': sid, 'cwd': e.proj, 'startedAt': at, 'procStart': stat_start(p.pid),
+                 'kind': 'interactive', 'entrypoint': entry, 'name': name}))
+        e.transcript(E, e.proj, [json.dumps({'type': 'ai-title', 'aiTitle': 'Tracked E', 'sessionId': E})], home=home)
+
+        def track(event, pid=None):
+            args = [sys.executable, '-I', SCRIPT, 'track', '-ClaudeHome', home, '-DataDir', mg]
+            if pid:
+                args += ['-ClaudePid', str(pid)]
+            r = subprocess.run(args, input=event if isinstance(event, str) else json.dumps(event),
+                               capture_output=True, text=True)
+            return json.loads(r.stdout)
+
+        def start(sid, src):
+            return {'session_id': sid, 'cwd': e.proj, 'hook_event_name': 'SessionStart', 'source': src}
+
+        def end(sid, why):
+            return {'session_id': sid, 'hook_event_name': 'SessionEnd', 'reason': why}
+
+        def sessions():
+            f = [x for x in os.listdir(snaps) if x.startswith('snapshot-')]
+            with open(os.path.join(snaps, f[0])) as fh:
+                return json.load(fh)['sessions']
+
+        r = run('list', '-ClaudeHome', home)
+        self.assertEqual(([s['sessionId'] for s in r['sessions']], r['hiddenNonInteractive']), ([A], 1),
+                         'headless (sdk) session is not offered as interactive')
+        r = track(start(E, 'startup'), p_cli.pid)
+        self.assertEqual((r['tracked'], r['why']), (False, 'not-managing'))
+        self.assertFalse(run('manage', '-ClaudeHome', home, '-DataDir', mg)['managing'])
+        r = run('manage', '-ClaudeHome', home, '-DataDir', mg, '-Enable', '-Ids', A)
+        self.assertTrue(r['managing'] and len(r['saved']) == 1 and os.path.isfile(os.path.join(mg, 'tracking')))
+        self.assertTrue(run('list', '-ClaudeHome', home, '-DataDir', mg)['managing'])
+        self.assertEqual(run('save', '-ClaudeHome', home, '-DataDir', mg, '-Ids', A)['error'], 'managing')
+
+        r = track(start(E, 'startup'), p_cli.pid)
+        self.assertEqual((r['tracked'], r['action']), (True, 'upsert'))
+        ss = sessions()
+        self.assertEqual([s['sessionId'] for s in ss], [A, E])
+        self.assertEqual([s['title'] for s in ss if s['sessionId'] == E], ['Tracked E'])
+        first = [s['startedAt'] for s in ss if s['sessionId'] == E][0]
+        track(start(E, 'resume'), p_cli.pid)
+        es = [s for s in sessions() if s['sessionId'] == E]
+        self.assertEqual((len(es), es[0]['startedAt']), (1, first), 'resume updates in place, keeps opening time')
+        r = track(start(G, 'startup'), p_sdk.pid)
+        self.assertEqual((r['tracked'], r['why']), (False, 'non-interactive'))
+        r = track(end(E, 'other'))
+        self.assertFalse(r['tracked'])
+        self.assertIn(E, [s['sessionId'] for s in sessions()], 'closed window / reboot keeps it')
+        r = track(end(E, 'prompt_input_exit'))
+        self.assertEqual(r['action'], 'remove')
+        self.assertNotIn(E, [s['sessionId'] for s in sessions()], '/exit drops it')
+        self.assertFalse(track('not json')['tracked'])
+        # The same process starting another session (e.g. after switching renderer) replaces its entry.
+        x, y = '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000002'
+        track(start(x, 'startup'), p_cli.pid)
+        track(start(y, 'startup'), p_cli.pid)
+        ids = [s['sessionId'] for s in sessions()]
+        self.assertTrue(y in ids and x not in ids and A in ids, 'new session in the same process replaces the old entry')
+        track(end(y, 'prompt_input_exit'))
+
+        many = ['10000000-0000-4000-8000-00000000000%d' % i for i in range(1, 6)]
+        procs = [subprocess.Popen([sys.executable, '-I', SCRIPT, 'track', '-ClaudeHome', home, '-DataDir', mg,
+                                   ], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                  text=True) for _ in many]
+        for p, sid in zip(procs, many):
+            p.communicate(json.dumps(start(sid, 'startup')), timeout=30)
+        ids = [s['sessionId'] for s in sessions()]
+        self.assertTrue(all(m in ids for m in many), 'concurrent hooks: all five recorded')
+
+        r = run('clear', '-ClaudeHome', home, '-DataDir', mg, '-Force')
+        self.assertTrue(r['managing'], 'clear keeps managing on')
+        r = run('manage', '-ClaudeHome', home, '-DataDir', mg, '-Disable')
+        self.assertTrue(not r['managing'] and r['wasManaging'] and not os.path.exists(os.path.join(mg, 'tracking')))
+        self.assertFalse(track(start(E, 'startup'), p_cli.pid)['tracked'])
+        run('save', '-ClaudeHome', home, '-DataDir', mg, '-Ids', A)
+        self.assertEqual(run('manage', '-ClaudeHome', home, '-DataDir', mg, '-Enable')['error'], 'unrestored-snapshot')
+        r = run('manage', '-ClaudeHome', home, '-DataDir', mg, '-Enable', '-Force')
+        self.assertEqual((r['managing'], r['saved'], r['replaced']), (True, [], 1))
+        run('manage', '-ClaudeHome', home, '-DataDir', mg, '-Disable')
 
     def test_snapshots(self):
         e = self.env

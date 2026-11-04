@@ -10,7 +10,9 @@ each one reopens resumed in its original folder, in the same kind of terminal
 it ran in — Git Bash, PowerShell or cmd on Windows; bash, zsh or fish in your
 terminal or tmux on Linux.
 
-No more writing session ids down.
+No more writing session ids down. Or let the **session manager** do it: say
+*"manage sessions"* once, and every session you start or resume is added to the
+list automatically, so even a crash or a sudden reboot loses nothing.
 
 ## Install
 
@@ -34,11 +36,37 @@ Then restart Claude Code.
 | `save` | List live Claude Code sessions, let you pick, and store them, replacing the previously saved set. |
 | `restore` | Reopen every saved session, each with `claude --resume <id>` in its folder and original terminal. |
 | `clear` (also `/sessions:remove`) | Delete the saved set without restoring it (only the list; the conversations stay). Asks first if some were never restored. |
+| `manage` | Session manager: keep the saved set up to date automatically (see below). Also turns it off and shows its status. |
 
-Both respond to natural language, e.g. *"save my sessions, I'm rebooting"*,
+They respond to natural language, e.g. *"save my sessions, I'm rebooting"*,
 *"restore my sessions"*, *"restore just the
 API one"*, *"restore them in cmd this time"*, *"restore them in tmux"*,
-*"always restore in Git Bash"*, *"clear sessions"* or *"remove sessions"*.
+*"always restore in Git Bash"*, *"clear sessions"* or *"remove sessions"*,
+*"manage sessions"*, *"stop managing sessions"*.
+
+## Session manager
+
+Instead of saving by hand, say *"manage sessions"* (or *"session manager"*). It
+asks which of your open sessions to start with, then keeps the list current on
+its own:
+
+| What happens to a session | On the list? |
+|---|---|
+| started or resumed (in any folder, any terminal) | added, with its folder, shell and terminal |
+| closed with `/exit`, Ctrl+D or `/logout` | dropped — you closed it on purpose |
+| `/clear` or `/resume` to another session | swapped for the new one |
+| window closed, process killed, crash, power loss, reboot | kept |
+
+Restore them any time with *"restore my sessions"*. Managing stays on across
+reboots until you say *"stop managing sessions"*; the list is kept when you
+stop. While it's on, a manual `save` asks to turn it off first, and `clear`
+empties the list without stopping it.
+
+It works through two plugin hooks (`SessionStart`, `SessionEnd`) that run in the
+background and exit at once while managing is off. Headless runs (`claude -p`,
+the SDK) are never added. Each Claude Code install (e.g. Windows and WSL) has its
+own list. Sessions that were already open when the plugin was installed or
+updated pick the hooks up after `/reload-plugins` or a restart.
 
 ## Where sessions reopen
 
@@ -140,7 +168,8 @@ python3 "$p/scripts/sessions.py" restore
 
 Commands: `list`, `save -Ids <id,...> [-Force]`, `snapshots`,
 `restore [-Ids <id,...>] [-UseShell <shell>] [-Terminal <terminal>] [-DryRun]`,
-`config [-UseShell ...] [-Terminal ...] [-Reset]`, `clear [-Force] [-IncludeConfig]`.
+`config [-UseShell ...] [-Terminal ...] [-Reset]`, `clear [-Force] [-IncludeConfig]`,
+`manage [-Enable [-Ids <id,...>] [-Force] | -Disable]`.
 
 ## License
 

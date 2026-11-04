@@ -18,6 +18,13 @@ Linux counterpart of sessions.ps1: same subcommands, flags and JSON output
              terminal -> Windows Terminal (WSL) / system default / any installed
              terminal -> a detached tmux session.
   config     Show or set the default restore shell/terminal (-UseShell, -Terminal, -Reset).
+  manage     -Enable: start a new snapshot with the sessions in -Ids (may be empty) and
+             turn on automatic tracking; -Disable: turn it off (the snapshot stays);
+             neither: status. Refuses to replace a snapshot with unrestored
+             sessions unless -Force.
+  track      Hook entry point (SessionStart / SessionEnd JSON on stdin): while
+             tracking is on, adds or updates the session, or drops it when it was
+             exited on purpose (/exit, logout, /clear, /resume to another session).
   clear      Delete the saved snapshot (the list of sessions, not the conversations).
              Refuses (unrestored-snapshot) while it has sessions not yet restored,
              unless -Force; -IncludeConfig also deletes the restore defaults.
@@ -393,7 +400,7 @@ class Ctx:
                 if not self.process_live(pid, o.get('procStart')):
                     continue
                 kind = o.get('kind')
-                if kind and kind != 'interactive' and not include_non_interactive:
+                if not is_interactive_entry(o) and not include_non_interactive:
                     hidden += 1
                     continue
                 sid = sid.lower()
@@ -472,18 +479,57 @@ class Ctx:
 
 # ---------------------------------------------------------------- commands
 
-def cmd_list(c):
-    r = c.live_sessions(c.a.IncludeNonInteractive)
-    data = c.data_dir()
-    write_result({'ok': True, 'source': r['source'], 'sessions': r['sessions'],
-                  'hiddenNonInteractive': r['hiddenNonInteractive'], 'pendingSnapshot': c.pending_snapshot(data)})
+def is_interactive_entry(o):
+    """A session someone works in at a terminal. Headless runs (`claude -p`, the SDK)
+    report kind "interactive" too, but their entrypoint is "sdk-..."."""
+    kind = str(o.get('kind') or '')
+    entry = str(o.get('entrypoint') or '')
+    return not (kind and kind != 'interactive') and not entry.startswith('sdk')
 
 
-def cmd_save(c):
-    ids = c.id_list()
-    if not ids:
-        fail('no-ids', 'Pass the session ids to save with -Ids.')
-    data = c.data_dir()
+def tracking_on(data):
+    return os.path.isfile(os.path.join(data['dir'], 'tracking'))
+
+
+class SnapshotLock:
+    """Serialises read-modify-write of the snapshot between this script, hooks of other
+    sessions (several can start at once during a restore) and restore itself. flock is
+    released by the OS if the holder dies, so a crash can't leave it stuck."""
+
+    def __init__(self, data):
+        self.path = os.path.join(data['dir'], 'snapshot.lock')
+        self.f = None
+
+    def __enter__(self):
+        import fcntl
+        self.f = open(self.path, 'a')
+        end = time.time() + 10
+        while True:
+            try:
+                fcntl.flock(self.f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return self
+            except OSError:
+                if time.time() > end:
+                    self.f.close()
+                    fail('locked', 'The snapshot is busy (another session is updating it); try again.')
+                time.sleep(0.05)
+
+    def __exit__(self, *exc):
+        import fcntl
+        try:
+            fcntl.flock(self.f, fcntl.LOCK_UN)
+        finally:
+            self.f.close()
+        return False
+
+
+def snapshot_entry(e):
+    return {k: e.get(k) for k in ('sessionId', 'cwd', 'title', 'lastPrompt', 'shell', 'shellPath', 'host',
+                                  'tmuxSession', 'startedAt')}
+
+
+def snapshot_entries(c, ids):
+    """Entries for the given ids (live, or ended but still resumable), in opening order."""
     by_id = {s['sessionId']: s for s in c.live_sessions(True)['sessions']}
     saved, missing = [], []
     for sid in ids:
@@ -493,28 +539,58 @@ def cmd_save(c):
             t = c.session_entry(sid, None, None, {})
             e = t if t['transcript'] and t['cwd'] else None
         if e:
-            saved.append({k: e.get(k) for k in ('sessionId', 'cwd', 'title', 'lastPrompt', 'shell', 'shellPath', 'host',
-                                                'tmuxSession', 'startedAt')})
+            saved.append(snapshot_entry(e))
         else:
             missing.append(sid)
-    if not saved:
-        fail('nothing-saved', 'None of the given sessions could be found.')
     # Stored in the order the sessions were opened, whatever order they were picked in.
-    saved = sort_by_opened(saved, lambda s: s.get('startedAt'))
+    return sort_by_opened(saved, lambda s: s.get('startedAt')), missing
 
-    pending = c.pending_snapshot(data)
-    if pending and not c.a.Force:
-        fail('unrestored-snapshot', 'The snapshot from %s still has %d session(s) that were never restored. Pass -Force to replace it.'
-             % (pending['createdAt'], len(pending['pending'])), {'pendingSnapshot': pending})
 
+def write_new_snapshot(c, data, saved, managed):
+    """Writes a new snapshot (the only one kept) and removes all others."""
     path = os.path.join(data['snapshots'], 'snapshot-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '.json')
-    write_json(path, {'version': 1, 'createdAt': now_iso(), 'restoredAt': None, 'restoredSessionIds': [],
-                      'settledSessionIds': [], 'sessions': saved})
-    replaced = 0
+    snap = {'version': 1, 'createdAt': now_iso(), 'restoredAt': None, 'restoredSessionIds': [],
+            'settledSessionIds': [], 'sessions': saved}
+    if managed:
+        snap['managed'] = True
+    replaced = 1 if os.path.exists(path) else 0  # an older snapshot from the same second
+    write_json(path, snap)
     for f in c.snapshot_files(data):
         if os.path.abspath(f) != os.path.abspath(path):
             os.remove(f)
             replaced += 1
+    return path, replaced
+
+
+def assert_no_pending(c, data, verb):
+    # Never replace a snapshot with sessions still waiting to be restored unless told to.
+    pending = c.pending_snapshot(data)
+    if pending and not c.a.Force:
+        fail('unrestored-snapshot', 'The snapshot from %s still has %d session(s) that were never restored. Pass -Force to %s it anyway.'
+             % (pending['createdAt'], len(pending['pending']), verb), {'pendingSnapshot': pending})
+
+
+def cmd_list(c):
+    r = c.live_sessions(c.a.IncludeNonInteractive)
+    data = c.data_dir()
+    write_result({'ok': True, 'source': r['source'], 'sessions': r['sessions'],
+                  'hiddenNonInteractive': r['hiddenNonInteractive'], 'pendingSnapshot': c.pending_snapshot(data),
+                  'managing': tracking_on(data)})
+
+
+def cmd_save(c):
+    ids = c.id_list()
+    if not ids:
+        fail('no-ids', 'Pass the session ids to save with -Ids.')
+    data = c.data_dir()
+    if tracking_on(data):
+        fail('managing', 'Sessions are being managed (saved automatically). Turn that off first (manage -Disable) to save a list by hand.')
+    saved, missing = snapshot_entries(c, ids)
+    if not saved:
+        fail('nothing-saved', 'None of the given sessions could be found.')
+    assert_no_pending(c, data, 'replace')
+    with SnapshotLock(data):
+        path, replaced = write_new_snapshot(c, data, saved, False)
     write_result({'ok': True, 'snapshot': path, 'dataDir': data['dir'], 'dataDirFallback': data['fallback'],
                   'saved': saved, 'missing': missing, 'replaced': replaced})
 
@@ -536,26 +612,151 @@ def cmd_snapshots(c):
 def cmd_clear(c):
     """Deletes the saved list of sessions (never the conversations themselves)."""
     data = c.data_dir()
-    pending = c.pending_snapshot(data)
-    if pending and not c.a.Force:
-        fail('unrestored-snapshot', 'The snapshot from %s still has %d session(s) that were never restored. Pass -Force to delete it anyway.'
-             % (pending['createdAt'], len(pending['pending'])), {'pendingSnapshot': pending})
+    assert_no_pending(c, data, 'delete')
     removed, count = [], 0
-    for f in c.snapshot_files(data):
-        o = read_json(f)
-        if isinstance(o, dict):
-            count += len(o.get('sessions') or [])
-        os.remove(f)
-        removed.append(os.path.basename(f))
-    for f in glob.glob(os.path.join(glob.escape(data['snapshots']), '*.tmp')):  # interrupted writes
-        os.remove(f)
+    with SnapshotLock(data):
+        for f in c.snapshot_files(data):
+            o = read_json(f)
+            if isinstance(o, dict):
+                count += len(o.get('sessions') or [])
+            os.remove(f)
+            removed.append(os.path.basename(f))
+        for f in glob.glob(os.path.join(glob.escape(data['snapshots']), '*.tmp')):  # interrupted writes
+            os.remove(f)
     cfg = os.path.join(data['dir'], 'config.json')
     config_removed = False
     if c.a.IncludeConfig and os.path.isfile(cfg):
         os.remove(cfg)
         config_removed = True
+    # Clearing doesn't stop managing: new and resumed sessions keep being added.
     write_result({'ok': True, 'dataDir': data['dir'], 'removed': removed, 'removedSessions': count,
-                  'configRemoved': config_removed, 'configKept': not c.a.IncludeConfig and os.path.isfile(cfg)})
+                  'configRemoved': config_removed, 'configKept': not c.a.IncludeConfig and os.path.isfile(cfg),
+                  'managing': tracking_on(data)})
+
+
+def snapshot_summary(c, data):
+    files = c.snapshot_files(data)
+    o = read_json(files[0]) if files else None
+    if not isinstance(o, dict):
+        return None
+    items = o.get('sessions') or []
+    return {'file': os.path.basename(files[0]), 'createdAt': o.get('createdAt'), 'managed': bool(o.get('managed')),
+            'count': len(items), 'sessions': [{k: i.get(k) for k in ('sessionId', 'title', 'cwd')} for i in items]}
+
+
+def cmd_manage(c):
+    a = c.a
+    data = c.data_dir()
+    flag = os.path.join(data['dir'], 'tracking')
+    if a.Enable and a.Disable:
+        fail('bad-args', 'Pass -Enable or -Disable, not both.')
+    if a.Enable:
+        ids = c.id_list()
+        saved, missing = snapshot_entries(c, ids) if ids else ([], [])
+        # Re-enabling while already managing keeps going with a fresh list; otherwise protect unrestored work.
+        if not tracking_on(data):
+            assert_no_pending(c, data, 'replace')
+        with SnapshotLock(data):
+            path, replaced = write_new_snapshot(c, data, saved, True)
+            with open(flag, 'w') as f:
+                f.write(now_iso())
+        write_result({'ok': True, 'managing': True, 'snapshot': path, 'saved': saved, 'missing': missing,
+                      'replaced': replaced, 'dataDir': data['dir']})
+        return
+    if a.Disable:
+        was = os.path.isfile(flag)
+        if was:
+            os.remove(flag)
+        write_result({'ok': True, 'managing': False, 'wasManaging': was, 'snapshot': snapshot_summary(c, data)})
+        return
+    since = None
+    if os.path.isfile(flag):
+        with open(flag) as f:
+            since = f.read().strip() or 'unknown'
+    write_result({'ok': True, 'managing': bool(since), 'since': since, 'snapshot': snapshot_summary(c, data)})
+
+
+def cmd_track(c):
+    """Hook entry point. Never fails loudly: a hook must not disturb the session."""
+    data = c.data_dir()
+    if not tracking_on(data):
+        write_result({'ok': True, 'tracked': False, 'why': 'not-managing'})
+        return
+    try:
+        ev = json.loads(sys.stdin.read() or '{}')
+    except ValueError:
+        ev = {}
+    if not isinstance(ev, dict):
+        ev = {}
+    sid = str(ev.get('session_id') or '').lower()
+    event = ev.get('hook_event_name')
+    if not GUID_RX.match(sid):
+        write_result({'ok': True, 'tracked': False, 'why': 'no-session'})
+        return
+    action, entry = None, None
+    if event == 'SessionStart':
+        pid = c.a.ClaudePid or os.environ.get('CLAUDE_PID')
+        reg = read_json(os.path.join(c.home, 'sessions', '%s.json' % pid)) if pid else None
+        if isinstance(reg, dict) and not is_interactive_entry(reg):
+            write_result({'ok': True, 'tracked': False, 'why': 'non-interactive'})
+            return
+        reg = reg if isinstance(reg, dict) else {}
+        cwd = ev.get('cwd') or reg.get('cwd')
+        started = now_iso()
+        if reg.get('startedAt'):
+            try:
+                started = datetime.fromtimestamp(float(reg['startedAt']) / 1000.0, timezone.utc).isoformat()
+            except (TypeError, ValueError, OverflowError):
+                pass
+        extra = {'startedAt': started}
+        if pid:
+            try:
+                extra.update(c.launch_info(int(pid)))
+            except ValueError:
+                pass
+        entry = snapshot_entry(c.session_entry(sid, cwd, reg.get('name'), extra))
+        # Which process runs it: a process that later starts another session (e.g. after
+        # switching renderer) replaces its earlier entry, which never sends a SessionEnd.
+        if pid:
+            entry['pid'] = int(pid) if str(pid).isdigit() else pid
+            entry['procStart'] = str(reg.get('procStart') or '')
+        action = 'upsert'
+    elif event == 'SessionEnd':
+        # Exited on purpose (or replaced by /clear or /resume): drop it. A closed window, killed
+        # process, reboot or crash ("other", or no hook at all) keeps it.
+        if ev.get('reason') in ('prompt_input_exit', 'logout', 'clear', 'resume'):
+            action = 'remove'
+    if not action:
+        write_result({'ok': True, 'tracked': False, 'why': 'kept'})
+        return
+
+    with SnapshotLock(data):
+        files = c.snapshot_files(data)
+        snap = read_json(files[0]) if files else None
+        path = files[0] if files else None
+        if not isinstance(snap, dict):
+            if action == 'remove':
+                write_result({'ok': True, 'tracked': False, 'why': 'no-snapshot'})
+                return
+            path, _ = write_new_snapshot(c, data, [], True)
+            snap = read_json(path)
+        old = [s for s in snap.get('sessions') or [] if str(s.get('sessionId', '')).lower() == sid]
+        items = [s for s in snap.get('sessions') or [] if str(s.get('sessionId', '')).lower() != sid]
+        if action == 'upsert' and 'pid' in entry:
+            items = [s for s in items if not (s.get('pid') and str(s.get('pid')) == str(entry['pid'])
+                                              and str(s.get('procStart') or '') == entry['procStart'])]
+        if action == 'upsert':
+            if old and old[0].get('startedAt'):
+                entry['startedAt'] = old[0]['startedAt']  # keep the original opening time of a resumed session
+            items.append(entry)
+        # A session (re)added by its own start is live again: it counts as pending, not settled.
+        not_this = lambda lst: [x for x in (lst or []) if x and str(x).lower() != sid]
+        write_json(path, {'version': snap.get('version'), 'createdAt': snap.get('createdAt'),
+                          'restoredAt': snap.get('restoredAt'),
+                          'restoredSessionIds': not_this(snap.get('restoredSessionIds')),
+                          'settledSessionIds': not_this(snap.get('settledSessionIds')),
+                          'sessions': sort_by_opened(items, lambda s: s.get('startedAt')), 'managed': True})
+    write_result({'ok': True, 'tracked': True, 'action': action, 'sessionId': sid, 'snapshot': path})
 
 
 def cmd_config(c):
@@ -868,14 +1069,22 @@ def cmd_restore(c):
 
         # Settled = opened now, or can never be opened; `save` may replace a snapshot once all are settled.
         permanent = [s['sessionId'] for s in skipped if s['reason'] != 'no-terminal']
-        restored = [x for x in (snap.get('restoredSessionIds') or []) if x] + [r['sessionId'] for r in launch]
-        settled = [x for x in (snap.get('settledSessionIds') or []) if x] + restored + permanent
         if launch or permanent:
-            write_json(snap_path, {'version': snap.get('version'), 'createdAt': snap.get('createdAt'),
-                                   'restoredAt': now_iso() if launch else snap.get('restoredAt'),
-                                   'restoredSessionIds': list(dict.fromkeys(restored)),
-                                   'settledSessionIds': list(dict.fromkeys(settled)),
-                                   'sessions': snap.get('sessions') or []})
+            # Re-read under the lock: while sessions start, their hooks may already be updating it.
+            with SnapshotLock(data):
+                cur = read_json(snap_path)
+                if isinstance(cur, dict):
+                    snap = cur
+                restored = [x for x in (snap.get('restoredSessionIds') or []) if x] + [r['sessionId'] for r in launch]
+                settled = [x for x in (snap.get('settledSessionIds') or []) if x] + restored + permanent
+                out = {'version': snap.get('version'), 'createdAt': snap.get('createdAt'),
+                       'restoredAt': now_iso() if launch else snap.get('restoredAt'),
+                       'restoredSessionIds': list(dict.fromkeys(restored)),
+                       'settledSessionIds': list(dict.fromkeys(settled)),
+                       'sessions': snap.get('sessions') or []}
+                if snap.get('managed'):
+                    out['managed'] = True
+                write_json(snap_path, out)
 
     write_result({'ok': True, 'snapshot': snap_path, 'dryRun': bool(a.DryRun), 'launched': launch,
                   'skipped': skipped, 'clearedEnv': cleared})
@@ -885,7 +1094,7 @@ def cmd_restore(c):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog='sessions.py', allow_abbrev=False)
-    p.add_argument('Command', choices=['list', 'save', 'snapshots', 'restore', 'config', 'clear'])
+    p.add_argument('Command', choices=['list', 'save', 'snapshots', 'restore', 'config', 'clear', 'manage', 'track'])
     p.add_argument('-DataDir', default='')
     p.add_argument('-CurrentSessionId', default='')
     p.add_argument('-Ids', default='')
@@ -898,16 +1107,19 @@ def main(argv=None):
     p.add_argument('-Terminal', default='', choices=TERMINAL_CHOICES)
     p.add_argument('-Reset', action='store_true')
     p.add_argument('-IncludeConfig', action='store_true')
+    p.add_argument('-Enable', action='store_true')
+    p.add_argument('-Disable', action='store_true')
     # Overrides, mainly for tests.
     p.add_argument('-ClaudeHome', default='')
     p.add_argument('-ClaudeExe', default='')
+    p.add_argument('-ClaudePid', default='')
     p.add_argument('-Terminals', default=None, help=argparse.SUPPRESS)
     p.add_argument('-Shells', default=None, help=argparse.SUPPRESS)
     a = p.parse_args(argv)
     c = Ctx(a)
     try:
         {'list': cmd_list, 'save': cmd_save, 'snapshots': cmd_snapshots, 'restore': cmd_restore,
-         'config': cmd_config, 'clear': cmd_clear}[a.Command](c)
+         'config': cmd_config, 'clear': cmd_clear, 'manage': cmd_manage, 'track': cmd_track}[a.Command](c)
     except SystemExit:
         raise
     except Exception as e:  # report, never a traceback

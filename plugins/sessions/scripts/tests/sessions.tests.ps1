@@ -6,6 +6,8 @@
 param([switch]$Launch)
 
 $ErrorActionPreference = 'Stop'
+# These tests may run inside a Claude session: don't let its process id leak into simulated hooks.
+Remove-Item Env:CLAUDE_PID -ErrorAction SilentlyContinue
 $script = Join-Path $PSScriptRoot '..\sessions.ps1'
 $root = Join-Path ([System.IO.Path]::GetTempPath()) ("sessions-test-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $failures = 0
@@ -219,6 +221,97 @@ try {
     Write-Utf8 (Join-Path $ordData 'snapshots\order.json') (ConvertTo-Json $ordSnap -Depth 5)
     $r = Run @('restore', '-ClaudeHome', $home1, '-DataDir', $ordData, '-DryRun', '-Snapshot', 'order', '-ClaudeExe', 'C:\x\claude.exe')
     Assert ((@($r.launched | ForEach-Object { $_.sessionId }) -join ',') -eq "$H2,$H1") 'no start times: stored order kept'
+
+    Write-Host 'manage / track'
+    $homeTr = Join-Path $root 'claude-track'
+    $mg = Join-Path $root 'manage'
+    $mgSnaps = Join-Path $mg 'snapshots'
+    # This process = an interactive session; the helper = a headless `claude -p` run.
+    $o = [ordered]@{ pid = $PID; sessionId = $A; cwd = $projA; startedAt = 1793722000000; procStart = $me.StartTime.ToFileTimeUtc().ToString(); kind = 'interactive'; entrypoint = 'cli'; name = 'Session A' }
+    Write-Utf8 (Join-Path $homeTr "sessions\$PID.json") (ConvertTo-Json $o)
+    $o = [ordered]@{ pid = $helper.Id; sessionId = $B; cwd = $projA; startedAt = 1793722060000; procStart = (Get-Process -Id $helper.Id).StartTime.ToFileTimeUtc().ToString(); kind = 'interactive'; entrypoint = 'sdk-cli'; name = 'Headless' }
+    Write-Utf8 (Join-Path $homeTr "sessions\$($helper.Id).json") (ConvertTo-Json $o)
+    Write-Transcript $homeTr $E $projA @(('{"type":"ai-title","aiTitle":"Tracked E","sessionId":"' + $E + '"}'))
+
+    function Track($json, [string]$procId) {
+        $argv = @('track', '-ClaudeHome', $homeTr, '-DataDir', $mg)
+        if ($procId) { $argv += @('-ClaudePid', $procId) }
+        $out = $json | & powershell -NoProfile -ExecutionPolicy Bypass -File $script @argv
+        $script:lastOut = $out -join "`n"
+        return (($out -join "`n") | ConvertFrom-Json)
+    }
+    function Mg-Sessions {
+        $snapObj = Get-Content -Raw (Get-ChildItem $mgSnaps -Filter 'snapshot-*.json')[0].FullName | ConvertFrom-Json
+        # Each entry must be a session object (a nested array here would mean a broken write).
+        foreach ($s in @($snapObj.sessions)) { if ($s -is [array]) { throw 'nested sessions array' }; $s }
+    }
+    $start = { param($sid, $src) '{"session_id":"' + $sid + '","cwd":"' + ($projA -replace '\\', '\\') + '","hook_event_name":"SessionStart","source":"' + $src + '"}' }
+    $end = { param($sid, $why) '{"session_id":"' + $sid + '","hook_event_name":"SessionEnd","reason":"' + $why + '"}' }
+
+    $r = Run @('list', '-ClaudeHome', $homeTr)
+    Assert (@($r.sessions | ForEach-Object { $_.sessionId }) -join ',' -eq $A -and $r.hiddenNonInteractive -eq 1) 'headless (sdk) session is not offered as interactive'
+    $r = Track (& $start $E 'startup') $PID
+    Assert ($r.ok -and -not $r.tracked -and $r.why -eq 'not-managing') 'track does nothing while not managing'
+    $r = Run @('manage', '-ClaudeHome', $homeTr, '-DataDir', $mg)
+    Assert ($r.ok -and -not $r.managing) 'status: not managing'
+    $r = Run @('manage', '-ClaudeHome', $homeTr, '-DataDir', $mg, '-Enable', '-Ids', $A)
+    Assert ($r.ok -and $r.managing -and @($r.saved).Count -eq 1 -and (Test-Path (Join-Path $mg 'tracking'))) 'manage -Enable starts with the picked sessions'
+    $r = Run @('list', '-ClaudeHome', $homeTr, '-DataDir', $mg)
+    Assert ($r.managing -eq $true) 'list reports managing'
+    $r = Run @('save', '-ClaudeHome', $homeTr, '-DataDir', $mg, '-Ids', $A)
+    Assert ($r.ok -eq $false -and $r.error -eq 'managing') 'manual save refused while managing'
+
+    $r = Track (& $start $E 'startup') $PID
+    Assert ($r.tracked -and $r.action -eq 'upsert') 'new session added'
+    $rawSnap = Get-Content -Raw (Get-ChildItem $mgSnaps -Filter 'snapshot-*.json')[0].FullName
+    Assert ($rawSnap -match '"settledSessionIds":\s*\[' -and $rawSnap -notmatch '"(restored|settled)SessionIds":\s*\{') 'empty id lists stay arrays (not {})'
+    $ss = Mg-Sessions
+    Assert ((@($ss | ForEach-Object { $_.sessionId }) -join ',') -eq "$A,$E" -and @($ss | Where-Object { $_.sessionId -eq $E })[0].title -eq 'Tracked E') 'snapshot holds both, in opening order, with title'
+    $firstStart = @($ss | Where-Object { $_.sessionId -eq $E })[0].startedAt
+    $r = Track (& $start $E 'resume') $PID
+    $ss = Mg-Sessions
+    Assert (@($ss | Where-Object { $_.sessionId -eq $E }).Count -eq 1 -and [string]@($ss | Where-Object { $_.sessionId -eq $E })[0].startedAt -eq [string]$firstStart) 'resume updates in place, keeps opening time'
+    $r = Track (& $start $G 'startup') ([string]$helper.Id)
+    Assert (-not $r.tracked -and $r.why -eq 'non-interactive') 'headless session not tracked'
+    $r = Track (& $end $E 'other')
+    Assert (-not $r.tracked -and @(Mg-Sessions | Where-Object { $_.sessionId -eq $E }).Count -eq 1) 'closed window / reboot keeps the session'
+    $r = Track (& $end $E 'prompt_input_exit')
+    Assert ($r.tracked -and $r.action -eq 'remove' -and @(Mg-Sessions | Where-Object { $_.sessionId -eq $E }).Count -eq 0) '/exit drops the session'
+    $r = Track 'not json'
+    Assert ($r.ok -and -not $r.tracked) 'bad hook input is ignored quietly'
+    # The same process starting another session (e.g. after switching renderer) replaces its entry.
+    $X = '30000000-0000-4000-8000-000000000001'
+    $Y = '30000000-0000-4000-8000-000000000002'
+    $null = Track (& $start $X 'startup') $PID
+    $null = Track (& $start $Y 'startup') $PID
+    $ids = @(Mg-Sessions | ForEach-Object { $_.sessionId })
+    Assert (($ids -contains $Y) -and -not ($ids -contains $X) -and ($ids -contains $A)) 'new session in the same process replaces the old entry'
+    $null = Track (& $end $Y 'prompt_input_exit')
+
+    # Five sessions starting at once (as during a restore) must all land in the snapshot.
+    $many = @('10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000004', '10000000-0000-4000-8000-000000000005')
+    $procs = foreach ($m in $many) {
+        $in = Join-Path $root "in-$m.json"
+        Write-Utf8 $in (& $start $m 'startup')
+        Start-Process powershell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$script`"", 'track', '-ClaudeHome', "`"$homeTr`"", '-DataDir', "`"$mg`"") -RedirectStandardInput $in -RedirectStandardOutput (Join-Path $root "out-$m.json") -WindowStyle Hidden -PassThru
+    }
+    $procs | ForEach-Object { $_.WaitForExit(30000) | Out-Null }
+    $ids = @(Mg-Sessions | ForEach-Object { $_.sessionId })
+    Assert (@($many | Where-Object { $ids -contains $_ }).Count -eq 5 -and -not (Test-Path (Join-Path $mg 'snapshot.lock'))) 'concurrent hooks: all five recorded, lock released'
+
+    $r = Run @('clear', '-ClaudeHome', $homeTr, '-DataDir', $mg, '-Force')
+    Assert ($r.ok -and $r.managing -eq $true) 'clear keeps managing on'
+    $r = Run @('manage', '-ClaudeHome', $homeTr, '-DataDir', $mg, '-Disable')
+    Assert ($r.ok -and -not $r.managing -and $r.wasManaging -and -not (Test-Path (Join-Path $mg 'tracking'))) 'manage -Disable turns it off'
+    $r = Track (& $start $E 'startup') $PID
+    Assert (-not $r.tracked) 'nothing tracked after disabling'
+    # Turning managing on over an unrestored hand-made snapshot needs confirmation.
+    $null = Run @('save', '-ClaudeHome', $homeTr, '-DataDir', $mg, '-Ids', $A)
+    $r = Run @('manage', '-ClaudeHome', $homeTr, '-DataDir', $mg, '-Enable')
+    Assert ($r.ok -eq $false -and $r.error -eq 'unrestored-snapshot') 'enable protects an unrestored snapshot'
+    $r = Run @('manage', '-ClaudeHome', $homeTr, '-DataDir', $mg, '-Enable', '-Force')
+    Assert ($r.ok -and $r.managing -and @($r.saved).Count -eq 0 -and $r.replaced -eq 1) 'enable -Force with nothing picked starts empty'
+    $null = Run @('manage', '-ClaudeHome', $homeTr, '-DataDir', $mg, '-Disable')
 
     Write-Host 'snapshots'
     $r = Run @('snapshots', '-ClaudeHome', $home1, '-DataDir', $data)
