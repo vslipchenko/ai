@@ -357,12 +357,28 @@ function Get-LiveSessions([bool]$includeNonInteractive) {
         }
     }
 
-    # Newest first, with the session running the skill pinned to the top.
-    $sorted = @($sessions | Sort-Object -Descending -Property @{ Expression = {
-                if ($_.Contains('startedAt')) { $_.startedAt } else { $_.lastActive } } })
-    $current = @($sorted | Where-Object { $_.isCurrent })
-    $others = @($sorted | Where-Object { -not $_.isCurrent })
-    return [ordered]@{ source = $source; sessions = @($current + $others); hiddenNonInteractive = $hidden }
+    # In the order they were opened (oldest first), like the user's tabs and windows.
+    $sorted = Sort-ByOpened @($sessions) { param($s) if ($s.Contains('startedAt')) { $s.startedAt } else { $s.lastActive } }
+    return [ordered]@{ source = $source; sessions = $sorted; hiddenNonInteractive = $hidden }
+}
+
+# Stable sort, oldest first, by an ISO-8601 time; entries without one keep their
+# relative order after the dated ones. (Sort-Object isn't stable in PowerShell 5.1.)
+function Sort-ByOpened($items, [scriptblock]$timeOf) {
+    $rows = @()
+    $i = 0
+    foreach ($it in $items) {
+        $t = & $timeOf $it
+        $key = 1
+        $when = [DateTimeOffset]::MaxValue
+        if ($t -is [datetime]) { $when = [DateTimeOffset]$t; $key = 0 }   # PowerShell 7's ConvertFrom-Json parses dates
+        elseif ($t) {
+            try { $when = [DateTimeOffset]::Parse([string]$t, [Globalization.CultureInfo]::InvariantCulture); $key = 0 } catch { }
+        }
+        $rows += [pscustomobject]@{ item = $it; key = $key; when = $when; index = $i }
+        $i++
+    }
+    return , @($rows | Sort-Object key, when, index | ForEach-Object { $_.item })
 }
 
 # ---------------------------------------------------------------- commands
@@ -436,12 +452,14 @@ function Invoke-Save {
         }
         if ($e) {
             $s = [ordered]@{ sessionId = $e.sessionId; cwd = $e.cwd; title = $e.title; lastPrompt = $e.lastPrompt
-                shell = $null; shellPath = $null; host = $null }
-            foreach ($k in @('shell', 'shellPath', 'host')) { if ($e.Contains($k)) { $s[$k] = $e[$k] } }
+                shell = $null; shellPath = $null; host = $null; startedAt = $null }
+            foreach ($k in @('shell', 'shellPath', 'host', 'startedAt')) { if ($e.Contains($k)) { $s[$k] = $e[$k] } }
             $saved += $s
         } else { $missing += $id }
     }
     if ($saved.Count -eq 0) { Stop-WithError 'nothing-saved' 'None of the given sessions could be found.' }
+    # Stored in the order the sessions were opened, whatever order they were picked in.
+    $saved = Sort-ByOpened $saved { param($s) $s.startedAt }
 
     # Only one snapshot is kept. Never replace one with sessions still waiting to be restored unless told to.
     $pendingSnap = Get-PendingSnapshot $data
@@ -782,6 +800,8 @@ function Invoke-Restore {
     $idList = Get-IdList
     $items = @(Get-Prop $snap 'sessions')
     if ($idList.Count -gt 0) { $items = @($items | Where-Object { $idList -contains ([string](Get-Prop $_ 'sessionId')).ToLowerInvariant() }) }
+    # Reopen in the order they were originally opened (snapshots without start times keep their stored order).
+    $items = Sort-ByOpened $items { param($s) Get-Prop $s 'startedAt' }
 
     $claude = Resolve-Exe $ClaudeExe @('claude')
     if (-not $claude) { Stop-WithError 'claude-not-found' 'The claude executable is not on PATH.' }
@@ -835,13 +855,26 @@ function Invoke-Restore {
         if ($launch.Count -gt 0) { $clearedEnv = Clear-ClaudeSessionEnv }
         $wtRows = @($launch | Where-Object { $_.terminal -eq 'wt' })
         # One Windows Terminal window per 10 tabs keeps the command line well under the 32K limit.
-        for ($i = 0; $i -lt $wtRows.Count; $i += 10) {
-            $chunk = @($wtRows[$i..([Math]::Min($i + 9, $wtRows.Count - 1))])
-            $tabs = @($chunk | ForEach-Object { 'new-tab ' + $specs[$_.sessionId].wtTab })
-            Start-Process -FilePath 'wt.exe' -ArgumentList ('-w new ' + ($tabs -join ' ; '))
-        }
-        foreach ($row in @($launch | Where-Object { $_.terminal -ne 'wt' })) {
+        # In the saved order: Windows Terminal tabs go left to right in one window (opened when
+        # the first of them comes up); separate windows open one by one, with a pause so they
+        # appear (and line up in the taskbar) in that order.
+        $wtDone = $false
+        $windowsLeft = @($launch | Where-Object { $_.terminal -ne 'wt' }).Count
+        foreach ($row in $launch) {
+            if ($row.terminal -eq 'wt') {
+                if ($wtDone) { continue }
+                $wtDone = $true
+                for ($i = 0; $i -lt $wtRows.Count; $i += 10) {
+                    $chunk = @($wtRows[$i..([Math]::Min($i + 9, $wtRows.Count - 1))])
+                    $tabs = @($chunk | ForEach-Object { 'new-tab ' + $specs[$_.sessionId].wtTab })
+                    Start-Process -FilePath 'wt.exe' -ArgumentList ('-w new ' + ($tabs -join ' ; '))
+                }
+                if ($windowsLeft -gt 0) { Start-Sleep -Milliseconds 700 }
+                continue
+            }
             Start-Window $specs[$row.sessionId] $row.cwd
+            $windowsLeft--
+            if ($windowsLeft -gt 0) { Start-Sleep -Milliseconds 700 }
         }
 
         # Settled = opened now, or can never be opened; `save` may replace a snapshot once all are settled.

@@ -123,6 +123,24 @@ def short(text, n):
     return t[:n - 3] + '...' if len(t) > n else t
 
 
+def sort_by_opened(items, time_of):
+    """Stable sort, oldest first, by an ISO-8601 time; entries without a (readable) one
+    keep their relative order after the dated ones."""
+    def key(pair):
+        index, item = pair
+        t = time_of(item)
+        if t:
+            try:
+                when = datetime.fromisoformat(str(t).replace('Z', '+00:00'))
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=timezone.utc)
+                return (0, when.timestamp(), index)
+            except ValueError:
+                pass
+        return (1, 0.0, index)
+    return [item for _, item in sorted(enumerate(items), key=key)]
+
+
 def posix_quote(s):
     # Single quotes only (no double quotes), so the string also survives Windows
     # command-line quoting on the way through wt.exe / wsl.exe.
@@ -413,8 +431,8 @@ class Ctx:
                 e = self.session_entry(sid, None, None, {'lastActive': datetime.fromtimestamp(m, timezone.utc).isoformat()})
                 if e['cwd']:
                     sessions.append(e)
-        sessions.sort(key=lambda e: e.get('startedAt') or e.get('lastActive') or '', reverse=True)
-        sessions = [e for e in sessions if e['isCurrent']] + [e for e in sessions if not e['isCurrent']]
+        # In the order they were opened (oldest first), like the user's tabs and windows.
+        sessions = sort_by_opened(sessions, lambda e: e.get('startedAt') or e.get('lastActive'))
         return {'source': source, 'sessions': sessions, 'hiddenNonInteractive': hidden}
 
     # -- snapshots
@@ -475,11 +493,14 @@ def cmd_save(c):
             t = c.session_entry(sid, None, None, {})
             e = t if t['transcript'] and t['cwd'] else None
         if e:
-            saved.append({k: e.get(k) for k in ('sessionId', 'cwd', 'title', 'lastPrompt', 'shell', 'shellPath', 'host', 'tmuxSession')})
+            saved.append({k: e.get(k) for k in ('sessionId', 'cwd', 'title', 'lastPrompt', 'shell', 'shellPath', 'host',
+                                                'tmuxSession', 'startedAt')})
         else:
             missing.append(sid)
     if not saved:
         fail('nothing-saved', 'None of the given sessions could be found.')
+    # Stored in the order the sessions were opened, whatever order they were picked in.
+    saved = sort_by_opened(saved, lambda s: s.get('startedAt'))
 
     pending = c.pending_snapshot(data)
     if pending and not c.a.Force:
@@ -749,6 +770,8 @@ def cmd_restore(c):
     items = snap.get('sessions') or []
     if ids:
         items = [i for i in items if str(i.get('sessionId', '')).lower() in ids]
+    # Reopen in the order they were originally opened (snapshots without start times keep their stored order).
+    items = sort_by_opened(items, lambda s: s.get('startedAt'))
 
     claude = a.ClaudeExe or shutil.which('claude')
     if not claude:
@@ -807,17 +830,27 @@ def cmd_restore(c):
     cleared = []
     if not a.DryRun:
         env, cleared = clean_env() if launch else (None, [])
+        # In the saved order: Windows Terminal tabs go left to right in one window (opened when
+        # the first of them comes up), tmux windows are appended in order, and separate
+        # windows open one by one with a pause so they appear in that order.
         wt_rows = [r for r in launch if r['terminal'] == 'wt']
-        for i in range(0, len(wt_rows), 10):
-            argv = [avail['terms']['wt'], '-w', 'new']
-            for j, r in enumerate(wt_rows[i:i + 10]):
-                if j:
-                    argv.append(';')
-                argv += specs[r['sessionId']]['wtTab']
-            spawn(argv, '/mnt/c' if os.path.isdir('/mnt/c') else None, env)
+        wt_done = False
+        windows_left = sum(1 for r in launch if r['terminal'] not in ('wt', 'tmux'))
         for r in launch:
             spec = specs[r['sessionId']]
             if r['terminal'] == 'wt':
+                if wt_done:
+                    continue
+                wt_done = True
+                for i in range(0, len(wt_rows), 10):
+                    argv = [avail['terms']['wt'], '-w', 'new']
+                    for j, w in enumerate(wt_rows[i:i + 10]):
+                        if j:
+                            argv.append(';')
+                        argv += specs[w['sessionId']]['wtTab']
+                    spawn(argv, '/mnt/c' if os.path.isdir('/mnt/c') else None, env)
+                if windows_left:
+                    time.sleep(0.7)
                 continue
             if spec['tmux']:
                 tm = avail['terms']['tmux']
@@ -829,6 +862,9 @@ def cmd_restore(c):
                 subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             else:
                 spawn(spec['argv'], r['cwd'], env)
+                windows_left -= 1
+                if windows_left:
+                    time.sleep(0.7)
 
         # Settled = opened now, or can never be opened; `save` may replace a snapshot once all are settled.
         permanent = [s['sessionId'] for s in skipped if s['reason'] != 'no-terminal']

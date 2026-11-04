@@ -82,8 +82,8 @@ class Env:
         self.procs.append(p)
         return p
 
-    def registry(self, pid, sid, cwd, proc_start, kind='interactive', name=None, home=None):
-        o = {'pid': pid, 'sessionId': sid, 'cwd': cwd, 'startedAt': 1793722012466, 'procStart': proc_start,
+    def registry(self, pid, sid, cwd, proc_start, kind='interactive', name=None, home=None, started_at=1793722012466):
+        o = {'pid': pid, 'sessionId': sid, 'cwd': cwd, 'startedAt': started_at, 'procStart': proc_start,
              'kind': kind, 'name': name or 'reg-' + sid[:4], 'status': 'idle'}
         write(os.path.join(home or self.home, 'sessions', '%d.json' % pid), json.dumps(o))
 
@@ -348,6 +348,34 @@ class SessionsTests(unittest.TestCase):
         self.assertEqual((r['ok'], len(r['removed']), r['configRemoved']), (True, 1, True), 'restored clears without -Force')
         self.assertFalse(os.path.exists(os.path.join(clr, 'config.json')))
         self.assertEqual(os.listdir(snaps), [])
+
+    def test_original_order(self):
+        e = self.env
+        home = os.path.join(e.root, 'claude-order')
+        first, second = A, B   # opened first / second
+        p1 = e.spawn([e.fake_claude_bin, '300'])
+        p2 = e.spawn([e.fake_claude_bin, '300'])
+        e.registry(p1.pid, first, e.proj, stat_start(p1.pid), name='Session 1', home=home, started_at=1793722000000)
+        e.registry(p2.pid, second, e.proj, stat_start(p2.pid), name='Session 2', home=home, started_at=1793722060000)
+        r = run('list', '-ClaudeHome', home, '-CurrentSessionId', second)
+        self.assertEqual([s['sessionId'] for s in r['sessions']], [first, second], 'opening order, current not pinned')
+        data = os.path.join(e.root, 'order-data')
+        r = run('save', '-ClaudeHome', home, '-DataDir', data, '-Ids', '%s,%s' % (second, first))
+        self.assertEqual([s['sessionId'] for s in r['saved']], [first, second], 'stored in opening order')
+        self.assertTrue(all(s['startedAt'] for s in r['saved']))
+
+        # Restore: two resumable sessions stored newest first come back oldest first.
+        h1, h2 = '11111111-0000-4000-8000-0000000000a1', '22222222-0000-4000-8000-0000000000a2'
+        e.transcript(h1, e.proj)
+        e.transcript(h2, e.proj)
+        e.snapshot('order.json', [{'sessionId': h2, 'cwd': e.proj, 'title': 'two', 'startedAt': '2026-11-04T10:01:00+00:00'},
+                                  {'sessionId': h1, 'cwd': e.proj, 'title': 'one', 'startedAt': '2026-11-04T10:00:00Z'}], data=data)
+        r = run('restore', *self.h(), '-DataDir', data, '-DryRun', '-Snapshot', 'order', '-ClaudeExe', '/x/claude')
+        self.assertEqual([l['sessionId'] for l in r['launched']], [h1, h2], 'reopened in opening order')
+        e.snapshot('order.json', [{'sessionId': h2, 'cwd': e.proj, 'title': 'two'},
+                                  {'sessionId': h1, 'cwd': e.proj, 'title': 'one'}], data=data)
+        r = run('restore', *self.h(), '-DataDir', data, '-DryRun', '-Snapshot', 'order', '-ClaudeExe', '/x/claude')
+        self.assertEqual([l['sessionId'] for l in r['launched']], [h2, h1], 'no start times: stored order kept')
 
     def test_snapshots(self):
         e = self.env

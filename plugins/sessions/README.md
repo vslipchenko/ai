@@ -103,8 +103,10 @@ and can be cleared any time.
   Code gives to processes started from inside a session (child-session flag,
   session id, messaging socket) are removed before launching, so each resumed
   session keeps saving its own transcript.
-- **Restoring.** Sessions that are already open are skipped, as are sessions
-  whose folder or conversation no longer exists, and you're told which and why.
+- **Restoring.** Sessions reopen in the order you originally opened them
+  (Windows Terminal tabs left to right, windows one after another). Sessions
+  that are already open are skipped, as are sessions whose folder or
+  conversation no longer exists, and you're told which and why.
 
 ## Limits
 

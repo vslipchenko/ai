@@ -16,6 +16,11 @@
   sessions and permanently skipped ones (everything except `no-shell` /
   `no-terminal`). Snapshots without `settledSessionIds` count as settled once
   `restoredAt` is set.
+- Order: sessions are kept in the order they were opened (`startedAt`, oldest
+  first) — `list` shows them that way (the current session is not pinned), `save`
+  stores them that way whatever order they were picked in, and `restore` reopens
+  them that way (wt tabs left to right; separate windows one by one with a short
+  pause). Snapshots without `startedAt` keep their stored order.
 - Tests: `scripts/tests/sessions.tests.ps1` (Windows, no Pester) and
   `scripts/tests/test_sessions.py` (Linux, stdlib unittest).
 

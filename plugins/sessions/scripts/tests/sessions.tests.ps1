@@ -27,8 +27,8 @@ function Write-Utf8([string]$path, [string]$text) {
     [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-function Write-Registry([string]$home_, [int]$procId, [string]$sid, [string]$cwd, [string]$procStart, [string]$kind) {
-    $o = [ordered]@{ pid = $procId; sessionId = $sid; cwd = $cwd; startedAt = 1793722012466; procStart = $procStart; kind = $kind; name = "reg-$($sid.Substring(0,4))"; status = 'idle' }
+function Write-Registry([string]$home_, [int]$procId, [string]$sid, [string]$cwd, [string]$procStart, [string]$kind, [long]$startedAt = 1793722012466) {
+    $o = [ordered]@{ pid = $procId; sessionId = $sid; cwd = $cwd; startedAt = $startedAt; procStart = $procStart; kind = $kind; name = "reg-$($sid.Substring(0,4))"; status = 'idle' }
     Write-Utf8 (Join-Path $home_ "sessions\$procId.json") (ConvertTo-Json $o)
 }
 
@@ -194,6 +194,31 @@ try {
     $r = Run @('clear', '-ClaudeHome', $home1, '-DataDir', $clr, '-IncludeConfig')
     Assert ($r.ok -and @($r.removed).Count -eq 1 -and $r.configRemoved -and -not (Test-Path (Join-Path $clr 'config.json'))) 'restored snapshot clears without -Force; -IncludeConfig drops defaults'
     Assert (@(Get-ChildItem $clrSnaps).Count -eq 0) 'nothing left after clear'
+
+    Write-Host 'original order'
+    $homeOrd = Join-Path $root 'claude-order'
+    # Opened first: this test process; opened second: the helper (both live, both interactive here).
+    Write-Registry $homeOrd $PID $A $projA ($me.StartTime.ToFileTimeUtc().ToString()) 'interactive' 1793722000000
+    Write-Registry $homeOrd $helper.Id $B $projA ((Get-Process -Id $helper.Id).StartTime.ToFileTimeUtc().ToString()) 'interactive' 1793722060000
+    $r = Run @('list', '-ClaudeHome', $homeOrd, '-CurrentSessionId', $B)
+    Assert ((@($r.sessions | ForEach-Object { $_.sessionId }) -join ',') -eq "$A,$B") 'list in opening order, current not pinned'
+    $ordData = Join-Path $root 'order-data'
+    $r = Run @('save', '-ClaudeHome', $homeOrd, '-DataDir', $ordData, '-Ids', "$B,$A")
+    Assert ((@($r.saved | ForEach-Object { $_.sessionId }) -join ',') -eq "$A,$B" -and $r.saved[0].startedAt) 'saved in opening order, whatever the pick order'
+    $H1 = '11111111-0000-4000-8000-0000000000a1'
+    $H2 = '22222222-0000-4000-8000-0000000000a2'
+    Write-Transcript $home1 $H1 $projA @()
+    Write-Transcript $home1 $H2 $projA @()
+    $ordSnap = [ordered]@{ version = 1; createdAt = '2026-01-01T00:00:00Z'; restoredAt = $null; restoredSessionIds = @(); sessions = @(
+            [ordered]@{ sessionId = $H2; cwd = $projA; title = 'two'; startedAt = '2026-11-04T10:01:00.0000000+00:00' },
+            [ordered]@{ sessionId = $H1; cwd = $projA; title = 'one'; startedAt = '2026-11-04T10:00:00Z' }) }
+    Write-Utf8 (Join-Path $ordData 'snapshots\order.json') (ConvertTo-Json $ordSnap -Depth 5)
+    $r = Run @('restore', '-ClaudeHome', $home1, '-DataDir', $ordData, '-DryRun', '-Snapshot', 'order', '-ClaudeExe', 'C:\x\claude.exe')
+    Assert ((@($r.launched | ForEach-Object { $_.sessionId }) -join ',') -eq "$H1,$H2") 'restore reopens in opening order'
+    $ordSnap.sessions = @([ordered]@{ sessionId = $H2; cwd = $projA; title = 'two' }, [ordered]@{ sessionId = $H1; cwd = $projA; title = 'one' })
+    Write-Utf8 (Join-Path $ordData 'snapshots\order.json') (ConvertTo-Json $ordSnap -Depth 5)
+    $r = Run @('restore', '-ClaudeHome', $home1, '-DataDir', $ordData, '-DryRun', '-Snapshot', 'order', '-ClaudeExe', 'C:\x\claude.exe')
+    Assert ((@($r.launched | ForEach-Object { $_.sessionId }) -join ',') -eq "$H2,$H1") 'no start times: stored order kept'
 
     Write-Host 'snapshots'
     $r = Run @('snapshots', '-ClaudeHome', $home1, '-DataDir', $data)
