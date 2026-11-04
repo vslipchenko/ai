@@ -1,6 +1,6 @@
 ---
 name: restore
-description: Reopen Claude Code sessions saved earlier with the `save` skill — each resumed in its original folder (`claude --resume <id>`) and in the same kind of terminal it ran in (Windows — Git Bash, PowerShell, cmd, Windows Terminal; Linux — bash/zsh/fish in GNOME Terminal, Konsole, kitty, tmux, WSL in Windows Terminal, ...), falling back to another shell or terminal if that one is gone. Use when the user wants to restore / reopen / bring back / resume their saved Claude sessions or terminals, e.g. "restore my sessions", "reopen the sessions I saved before the reboot", "bring back yesterday's sessions", "restore them all in Git Bash", "restore them in tmux", or to set how sessions are restored ("always restore in Git Bash"). Windows and Linux.
+description: Reopen Claude Code sessions saved earlier with the `save` skill — each resumed in its original folder (`claude --resume <id>`) and in the same kind of terminal it ran in (Windows — Git Bash, PowerShell, cmd, Windows Terminal; Linux — bash/zsh/fish in GNOME Terminal, Konsole, kitty, tmux, WSL in Windows Terminal, ...; macOS — zsh/bash in Terminal, iTerm2, Ghostty, kitty, tmux, ...), falling back to another shell or terminal if that one is gone. Use when the user wants to restore / reopen / bring back / resume their saved Claude sessions or terminals, e.g. "restore my sessions", "reopen the sessions I saved before the reboot", "bring back yesterday's sessions", "restore them all in Git Bash", "restore them in tmux", or to set how sessions are restored ("always restore in Git Bash"). Windows, Linux and macOS.
 ---
 
 # Sessions — Restore
@@ -30,6 +30,18 @@ from.
   tmux session (e.g. with no desktop, over SSH);
 - VS Code / editor terminals can't be opened from outside → another terminal.
 
+**macOS:**
+- the same shell (zsh, bash, fish, sh) in the same terminal: Terminal and
+  iTerm2 (via AppleScript), Ghostty, kitty, WezTerm, Alacritty;
+- **tmux** → a new window in the same tmux session, as on Linux;
+- missing shell → zsh, else bash, else sh; missing terminal → Terminal (it
+  ships with every Mac), then any other installed one, then tmux;
+- Warp and editor terminals can.t be opened with a command → Terminal.
+- The first restore into Terminal or iTerm2 makes macOS ask whether the app
+  running Claude may control it (System Settings › Privacy & Security ›
+  Automation). If that was refused, the session is skipped with
+  `automation-denied` and can be restored again once it is allowed.
+
 Whatever falls back, the session still opens and the result says why.
 
 ## Script
@@ -41,13 +53,13 @@ platform); the options and JSON output are identical.
   ```
   powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/sessions.ps1" <command> [options]
   ```
-- **Linux** — run with Bash:
+- **Linux and macOS** — run with Bash:
   ```
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sessions.py" <command> [options]
   ```
-  If `python3` is not installed, tell the user the plugin needs Python 3 on
-  Linux (e.g. `sudo apt install python3`) and stop.
-- **macOS** — not supported yet: say so and stop.
+  If `python3` is not installed, tell the user the plugin needs Python 3 and
+  stop: on Linux e.g. `sudo apt install python3`; on macOS `xcode-select --install`
+  (Apple's Command Line Tools, which include `/usr/bin/python3`).
 
 If `${CLAUDE_PLUGIN_ROOT}` above was not replaced with a real path, use the
 folder two levels above this skill's base directory instead. Pass
@@ -67,7 +79,9 @@ Precedence: per-run options → saved default → what each session ran in.
   - Linux — shells `bash|zsh|fish|sh`; terminals `gnome-terminal|ptyxis|kgx|
     konsole|xfce4-terminal|tilix|terminator|kitty|wezterm|alacritty|foot|xterm|
     x-terminal-emulator|tmux|wt` (`kgx` = GNOME Console, `wt` = Windows Terminal
-    from WSL).
+    from WSL);
+  - macOS — shells `zsh|bash|fish|sh`; terminals `terminal|iterm2|ghostty|kitty|
+    wezterm|alacritty|tmux` (`terminal` = Apple's Terminal).
 - **From now on** ("always restore in Git Bash"): save it as the default:
   ```
   ... config -DataDir "${CLAUDE_PLUGIN_DATA}" [-UseShell <shell>] [-Terminal <terminal>]
@@ -125,5 +139,11 @@ Report in plain text:
   - `no-shell` (Windows) / `no-terminal` (Linux) — no usable shell or terminal
     was found at all;
   - `bad-id` — the snapshot entry is damaged.
+  - `automation-denied` (macOS) — macOS didn't allow controlling Terminal /
+    iTerm2: tell the user to allow it in System Settings › Privacy & Security ›
+    Automation (or answer the prompt), then restore again; `detail` has the
+    message;
+  - `launch-failed` — the terminal could not be started (`detail` says why);
+    restoring again retries it.
 
 If nothing was launched, say so plainly.

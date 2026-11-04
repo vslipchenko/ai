@@ -1,6 +1,6 @@
 ---
 name: manage
-description: Session manager — keep the saved list of Claude Code sessions up to date automatically instead of saving by hand — once turned on, every new or resumed session is added (with its folder, shell and terminal) and sessions exited on purpose are dropped, so a sudden close, crash or reboot never loses track of them; reopen them later with the `restore` skill. Also turns this off again and reports its status. Use when the user says "manage sessions", "session manager", "start the session manager", "track my sessions automatically", "auto-save my sessions", "stop managing sessions", "turn off the session manager", "are my sessions being managed?". Windows and Linux.
+description: Session manager — keep the saved list of Claude Code sessions up to date automatically instead of saving by hand — once turned on, every new or resumed session is added (with its folder, shell and terminal) and sessions exited on purpose are dropped, so a sudden close, crash or reboot never loses track of them; reopen them later with the `restore` skill. Also turns this off again and reports its status. Use when the user says "manage sessions", "session manager", "start the session manager", "track my sessions automatically", "auto-save my sessions", "stop managing sessions", "turn off the session manager", "are my sessions being managed?". Windows, Linux and macOS.
 ---
 
 # Sessions — Manage
@@ -27,13 +27,13 @@ platform); the options and JSON output are identical.
   ```
   powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/sessions.ps1" <command> [options]
   ```
-- **Linux** — run with Bash:
+- **Linux and macOS** — run with Bash:
   ```
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sessions.py" <command> [options]
   ```
-  If `python3` is not installed, tell the user the plugin needs Python 3 on
-  Linux (e.g. `sudo apt install python3`) and stop.
-- **macOS** — not supported yet: say so and stop.
+  If `python3` is not installed, tell the user the plugin needs Python 3 and
+  stop: on Linux e.g. `sudo apt install python3`; on macOS `xcode-select --install`
+  (Apple's Command Line Tools, which include `/usr/bin/python3`).
 
 If `${CLAUDE_PLUGIN_ROOT}` above was not replaced with a real path, use the
 folder two levels above this skill's base directory instead. Pass

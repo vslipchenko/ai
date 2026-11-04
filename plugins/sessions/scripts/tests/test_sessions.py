@@ -38,10 +38,38 @@ def run(*args, env=None):
         raise AssertionError('bad output: %r %r' % (r.stdout, r.stderr))
 
 
+IS_MAC = sys.platform == 'darwin'
+
+
 def stat_start(pid):
+    """A process start time in a format the script accepts as procStart: /proc start
+    ticks on Linux, epoch milliseconds on macOS (from `ps`)."""
+    if IS_MAC:
+        out = subprocess.run(['ps', '-o', 'lstart=', '-p', str(pid)], capture_output=True, text=True,
+                             env=dict(os.environ, LC_ALL='C')).stdout.strip()
+        when = time.mktime(time.strptime(' '.join(out.split()[1:]), '%b %d %H:%M:%S %Y'))
+        return str(int(when * 1000))
     with open('/proc/%d/stat' % pid) as f:
         data = f.read()
     return data[data.rfind(')') + 2:].split()[19]
+
+
+def children(pid):
+    """Process ids whose parent is pid."""
+    if IS_MAC:
+        out = subprocess.run(['ps', '-axo', 'pid=,ppid='], capture_output=True, text=True).stdout
+        return [int(a) for a, b in (l.split() for l in out.splitlines() if l.strip()) if int(b) == pid]
+    found = []
+    for d in os.listdir('/proc'):
+        if d.isdigit():
+            try:
+                with open('/proc/%s/stat' % d) as f:
+                    data = f.read()
+            except OSError:
+                continue
+            if int(data[data.rfind(')') + 2:].split()[1]) == pid:
+                found.append(int(d))
+    return found
 
 
 def write(path, text):
@@ -141,15 +169,7 @@ class SessionsTests(unittest.TestCase):
 
     @staticmethod
     def _children(pid):
-        for d in os.listdir('/proc'):
-            if d.isdigit():
-                try:
-                    with open('/proc/%s/stat' % d) as f:
-                        data = f.read()
-                except OSError:
-                    continue
-                if int(data[data.rfind(')') + 2:].split()[1]) == pid:
-                    yield int(d)
+        return iter(children(pid))
 
     def h(self):
         return ['-ClaudeHome', self.env.home]
@@ -179,11 +199,16 @@ class SessionsTests(unittest.TestCase):
         e = self.env
         home = os.path.join(e.root, 'claude-fmt')
         p = e.spawn([e.fake_claude_bin, '300'])
-        ticks = int(stat_start(p.pid))
-        with open('/proc/stat') as f:
-            btime = next(int(l.split()[1]) for l in f if l.startswith('btime '))
-        started = btime + ticks / float(os.sysconf('SC_CLK_TCK'))
-        for label, value in (('ticks', str(ticks)), ('epoch ms', str(int(started * 1000))), ('epoch s', str(int(started)))):
+        if IS_MAC:
+            started = int(stat_start(p.pid)) / 1000.0
+            formats = (('epoch ms', str(int(started * 1000))), ('epoch s', str(int(started))))
+        else:
+            ticks = int(stat_start(p.pid))
+            with open('/proc/stat') as f:
+                btime = next(int(l.split()[1]) for l in f if l.startswith('btime '))
+            started = btime + ticks / float(os.sysconf('SC_CLK_TCK'))
+            formats = (('ticks', str(ticks)), ('epoch ms', str(int(started * 1000))), ('epoch s', str(int(started))))
+        for label, value in formats:
             e.registry(p.pid, A, e.proj, value, home=home)
             r = run('list', '-ClaudeHome', home)
             self.assertEqual(len(r['sessions']), 1, label)
@@ -479,7 +504,7 @@ class SessionsTests(unittest.TestCase):
         self.assertIn(A, [s['sessionId'] for s in r['snapshots'][0]['sessions']])
 
     # ------------------------------------------------------------ restore planning
-    def plan(self, fields, *more, terminals='xterm,tmux', shells='bash,zsh,fish,sh'):
+    def plan(self, fields, *more, terminals='xterm,tmux', shells='bash,zsh,fish,sh', platform='linux'):
         e = self.env
         entry = {'sessionId': E, 'cwd': e.proj, 'title': 'plan'}
         entry.update(fields)
@@ -487,7 +512,7 @@ class SessionsTests(unittest.TestCase):
         e.snapshot('plan.json', [entry], data=data)
         env = dict(os.environ, DISPLAY=':0')
         r = run('restore', *self.h(), '-DataDir', data, '-DryRun', '-Snapshot', 'plan', '-ClaudeExe', '/x/claude',
-                '-Terminals', terminals, '-Shells', shells, *more, env=env)
+                '-Terminals', terminals, '-Shells', shells, '-Platform', platform, *more, env=env)
         self.assertTrue(r['ok'], r)
         return r['launched'][0] if r['launched'] else r['skipped'][0]
 
@@ -549,6 +574,57 @@ class SessionsTests(unittest.TestCase):
         self.assertEqual(p['tmuxSession'], 'claude-sessions')
         p = self.plan({'shell': 'bash', 'host': 'xterm'}, '-UseShell', 'sh', '-Terminal', 'tmux')
         self.assertEqual((p['shell'], p['terminal']), ('sh', 'tmux'))
+
+    def test_mac_plans(self):
+        """macOS restore planning (forced with -Platform mac, so it runs on any OS)."""
+        e = self.env
+        zsh = shutil.which('zsh') or '/bin/zsh'
+        mac = lambda fields, **kw: self.plan(fields, platform='mac', **kw)
+        p = mac({'shell': 'zsh', 'host': 'terminal'}, terminals='terminal,iterm2,tmux')
+        self.assertEqual((p['shell'], p['terminal'], p['fallback']), ('zsh', 'terminal', None))
+        self.assertEqual((p['launch']['type'], p['launch']['app']), ('osascript', 'Terminal'))
+        typed = 'exec ' + ' '.join("'" + x.replace("'", "'\\''") + "'" for x in [zsh, '-l', '-c', p['command']])
+        self.assertEqual(p['launch']['args'], [typed, 'plan'], 'command and title passed as osascript arguments')
+        p = mac({'shell': 'zsh', 'host': 'iterm2'}, terminals='terminal,iterm2')
+        self.assertEqual((p['terminal'], p['launch']['app']), ('iterm2', 'iTerm'))
+        p = mac({'shell': 'zsh', 'host': 'ghostty'}, terminals='ghostty,terminal')
+        self.assertEqual(p['launch']['argv'][:2], ['open', '-na'])
+        self.assertIn('--working-directory=' + e.proj, p['launch']['argv'])
+        self.assertEqual(p['launch']['argv'][p['launch']['argv'].index('-e') + 1:], [zsh, '-l', '-c', p['command']])
+        p = mac({'shell': 'zsh', 'host': 'kitty'}, terminals='kitty,terminal')
+        self.assertTrue(p['launch']['argv'][0].endswith('kitty') and '--directory' in p['launch']['argv'])
+        p = mac({'shell': 'zsh', 'host': 'iterm2'}, terminals='terminal')
+        self.assertEqual(p['terminal'], 'terminal')
+        self.assertIn('iterm2 not available', p['fallback'])
+        p = mac({'shell': 'zsh', 'host': 'warp'}, terminals='terminal,iterm2')
+        self.assertEqual(p['terminal'], 'terminal')
+        self.assertIn("Warp can't be opened", p['fallback'])
+        p = mac({'shell': 'zsh', 'host': 'konsole'}, terminals='iterm2,terminal')
+        self.assertEqual(p['terminal'], 'terminal', 'Terminal is the first fallback on macOS')
+        p = mac({'shell': 'zsh', 'host': 'terminal'}, terminals='terminal', shells='bash,sh')
+        self.assertEqual(p['shell'], 'bash')
+        self.assertIn('zsh not found', p['fallback'])
+        p = mac({'shell': 'nu', 'host': 'terminal'}, terminals='terminal')
+        self.assertEqual(p['shell'], 'zsh', 'unsupported shell falls back to zsh on macOS')
+        p = mac({'shell': 'zsh', 'host': 'tmux', 'tmuxSession': 'work'}, terminals='terminal,tmux')
+        self.assertEqual((p['terminal'], p['tmuxSession']), ('tmux', 'work'))
+        p = mac({'shell': 'zsh', 'host': 'terminal'}, terminals='')
+        self.assertEqual(p['reason'], 'no-terminal')
+        p = mac({'shell': 'zsh', 'host': 'wt'}, terminals='wt,terminal')
+        self.assertEqual(p['terminal'], 'terminal', 'no Windows Terminal on macOS')
+
+    def test_term_program_hint(self):
+        """With no terminal in the process tree (CI, WSL), TERM_PROGRAM names the terminal."""
+        if not (os.environ.get('CI') or os.environ.get('WSL_DISTRO_NAME')):
+            self.skipTest('needs a process tree without a terminal (CI or WSL)')
+        e = self.env
+        home = os.path.join(e.root, 'claude-hint')
+        shell = e.spawn(['bash', '-c', '"$0" 300; :', e.fake_claude_bin], env=dict(os.environ, TERM_PROGRAM='iTerm.app'))
+        self.assertTrue(wait_for(lambda: bool(children(shell.pid))))
+        claude = children(shell.pid)[0]
+        e.registry(claude, A, e.proj, stat_start(claude), home=home)
+        s = run('list', '-ClaudeHome', home)['sessions'][0]
+        self.assertEqual((s['shell'], s['host']), ('bash', 'iterm2'))
 
     def test_restore_wt_from_wsl(self):
         p = self.plan({'shell': 'bash', 'host': 'wt'}, terminals='wt,xterm')
@@ -615,13 +691,24 @@ class SessionsTests(unittest.TestCase):
         e.snapshot('snapshot-29990101-000000.json', [{'sessionId': E, 'cwd': e.proj, 'title': 'launch test'}], data=data)
         env = dict(os.environ, CLAUDE_CODE_CHILD_SESSION='1', CLAUDECODE='1', CLAUDE_CODE_SESSION_ID='parent',
                    TMUX_TMPDIR=tempfile.mkdtemp(prefix='tmux-', dir=e.root))
-        cases = [(t, 'bash') for t in ['xterm', 'gnome-terminal', 'kitty', 'alacritty', 'foot', 'konsole', 'tmux']
-                 if shutil.which(t)]
-        for sh in ('zsh', 'fish', 'sh'):
-            if shutil.which(sh) and shutil.which('xterm'):
-                cases.append(('xterm', sh))
-        if self._wt():
-            cases.append(('wt', 'bash'))
+        if IS_MAC:
+            apps = {'terminal': 'Terminal', 'iterm2': 'iTerm', 'ghostty': 'Ghostty', 'kitty': 'kitty',
+                    'wezterm': 'WezTerm', 'alacritty': 'Alacritty'}
+            cases = [(t, 'zsh') for t, app in apps.items()
+                     if any(os.path.isdir(os.path.join(d, app + '.app')) for d in
+                            ('/Applications', '/System/Applications/Utilities', os.path.expanduser('~/Applications')))]
+            if shutil.which('tmux'):
+                cases.append(('tmux', 'zsh'))
+            if shutil.which('bash'):
+                cases.append(('terminal', 'bash'))
+        else:
+            cases = [(t, 'bash') for t in ['xterm', 'gnome-terminal', 'kitty', 'alacritty', 'foot', 'konsole', 'tmux']
+                     if shutil.which(t)]
+            for sh in ('zsh', 'fish', 'sh'):
+                if shutil.which(sh) and shutil.which('xterm'):
+                    cases.append(('xterm', sh))
+            if self._wt():
+                cases.append(('wt', 'bash'))
         self.assertTrue(cases, 'no terminal installed')
         failures = []
         for term, sh in cases:
@@ -630,6 +717,12 @@ class SessionsTests(unittest.TestCase):
             wt_before = self._wt_pids() if term == 'wt' else None
             r = run('restore', *self.h(), '-DataDir', data, '-ClaudeExe', fake, '-Terminal', term, '-UseShell', sh,
                     '-Ids', E, env=env)
+            blocked = [s for s in r.get('skipped', []) if s.get('reason') == 'automation-denied']
+            if blocked:
+                # macOS refused permission to control the terminal (expected on a CI runner).
+                print('  note real launch: %s in %s blocked by macOS Automation permission: %s'
+                      % (sh, term, blocked[0].get('detail')))
+                continue
             ok = wait_for(lambda: os.path.exists(marker), 25)
             got = ''
             if ok:

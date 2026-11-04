@@ -1,0 +1,79 @@
+name: sessions plugin
+
+on:
+  push:
+    paths:
+      - 'plugins/sessions/**'
+      - '.github/workflows/sessions-plugin.yml'
+  pull_request:
+    paths:
+      - 'plugins/sessions/**'
+      - '.github/workflows/sessions-plugin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Each job prints its test output and also reports it as an annotation (error on
+# failure, notice on success), so results can be read without downloading logs.
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tmux
+        run: brew install tmux || echo "tmux not installed; tmux tests will be skipped"
+      - name: Tests (Apple's /usr/bin/python3, as on a real Mac)
+        shell: bash
+        run: |
+          /usr/bin/python3 --version
+          set +e
+          /usr/bin/python3 -I plugins/sessions/scripts/tests/test_sessions.py > out.txt 2>&1
+          status=$?
+          cat out.txt
+          body=$(/usr/bin/python3 -c 'import sys; t=open("out.txt").read()[-6000:]; print(t.replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')
+          if [ $status -ne 0 ]; then echo "::error title=macOS tests failed::$body"; else echo "::notice title=macOS tests passed::$body"; fi
+          exit $status
+      - name: Real launches (Terminal / tmux; may be blocked by the Automation permission on a runner)
+        shell: bash
+        continue-on-error: true
+        run: |
+          set +e
+          SESSIONS_LAUNCH=1 /usr/bin/python3 -I plugins/sessions/scripts/tests/test_sessions.py SessionsTests.test_real_launches > launch.txt 2>&1
+          status=$?
+          cat launch.txt
+          body=$(/usr/bin/python3 -c 'import sys; t=open("launch.txt").read()[-6000:]; print(t.replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')
+          if [ $status -ne 0 ]; then echo "::warning title=macOS real launches failed::$body"; else echo "::notice title=macOS real launches::$body"; fi
+          exit $status
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tests
+        shell: bash
+        run: |
+          python3 --version
+          set +e
+          python3 -I plugins/sessions/scripts/tests/test_sessions.py > out.txt 2>&1
+          status=$?
+          cat out.txt
+          body=$(python3 -c 'import sys; t=open("out.txt").read()[-6000:]; print(t.replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')
+          if [ $status -ne 0 ]; then echo "::error title=Linux tests failed::$body"; else echo "::notice title=Linux tests passed::$body"; fi
+          exit $status
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tests (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File plugins\sessions\scripts\tests\sessions.tests.ps1 2>&1 | Out-String
+          $status = $LASTEXITCODE
+          Write-Output $out
+          $tail = $out.Substring([Math]::Max(0, $out.Length - 6000))
+          $body = $tail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+          if ($status -ne 0) { Write-Output "::error title=Windows tests failed::$body" } else { Write-Output "::notice title=Windows tests passed::$body" }
+          exit $status

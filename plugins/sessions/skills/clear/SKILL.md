@@ -1,6 +1,6 @@
 ---
 name: clear
-description: Delete the saved set of Claude Code sessions (the snapshot made by the `save` skill) without restoring it — only the saved list, never the conversations themselves. Asks first if some saved sessions were never restored. Use when the user wants to remove / delete / clear / discard / forget their saved sessions or snapshot, e.g. "clear sessions", "remove sessions", "clear my saved sessions", "remove my saved sessions", "delete the sessions snapshot", "forget the sessions I saved", "start fresh before a demo", optionally also resetting the restore defaults ("and reset my restore settings"). Windows and Linux.
+description: Delete the saved set of Claude Code sessions (the snapshot made by the `save` skill) without restoring it — only the saved list, never the conversations themselves. Asks first if some saved sessions were never restored. Use when the user wants to remove / delete / clear / discard / forget their saved sessions or snapshot, e.g. "clear sessions", "remove sessions", "clear my saved sessions", "remove my saved sessions", "delete the sessions snapshot", "forget the sessions I saved", "start fresh before a demo", optionally also resetting the restore defaults ("and reset my restore settings"). Windows, Linux and macOS.
 ---
 
 # Sessions — Clear
@@ -20,13 +20,13 @@ platform); the options and JSON output are identical.
   ```
   powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/sessions.ps1" <command> [options]
   ```
-- **Linux** — run with Bash:
+- **Linux and macOS** — run with Bash:
   ```
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sessions.py" <command> [options]
   ```
-  If `python3` is not installed, tell the user the plugin needs Python 3 on
-  Linux (e.g. `sudo apt install python3`) and stop.
-- **macOS** — not supported yet: say so and stop.
+  If `python3` is not installed, tell the user the plugin needs Python 3 and
+  stop: on Linux e.g. `sudo apt install python3`; on macOS `xcode-select --install`
+  (Apple's Command Line Tools, which include `/usr/bin/python3`).
 
 If `${CLAUDE_PLUGIN_ROOT}` above was not replaced with a real path, use the
 folder two levels above this skill's base directory instead. Pass

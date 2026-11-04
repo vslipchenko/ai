@@ -8,7 +8,8 @@ running on the machine and lets you pick which to keep. Later, start Claude
 Code anywhere and ask it to **restore your sessions**:
 each one reopens resumed in its original folder, in the same kind of terminal
 it ran in — Git Bash, PowerShell or cmd on Windows; bash, zsh or fish in your
-terminal or tmux on Linux.
+terminal or tmux on Linux; zsh or bash in Terminal, iTerm2, Ghostty and others
+on macOS.
 
 No more writing session ids down. Or let the **session manager** do it: say
 *"manage sessions"* once, and every session you start or resume is added to the
@@ -27,7 +28,11 @@ Then restart Claude Code.
 - **Windows** 10/11 with Windows PowerShell 5.1 (built in). Git Bash and Windows
   Terminal are used when installed, never required.
 - **Linux** with Python 3 (preinstalled on almost every desktop distro). Works
-  under WSL too. macOS is not supported yet.
+  under WSL too.
+- **macOS** with Python 3 from Apple's Command Line Tools (`/usr/bin/python3`;
+  installed with `xcode-select --install`, and already there if you use `git`).
+  macOS support is tested on GitHub's macOS runners but **not yet on a real
+  Mac** — see [Limits](#limits).
 
 ## Skills
 
@@ -105,6 +110,24 @@ installed one, and finally a detached tmux session when there is no desktop at
 all. Either way the session still opens and you're told which one fell back
 and why.
 
+### macOS
+
+| Saved from | Reopens in |
+|---|---|
+| zsh / bash / fish / sh in Terminal or iTerm2 | a new window of the same app with the same shell (via AppleScript) |
+| Ghostty, kitty, WezTerm or Alacritty | a new window of the same terminal |
+| tmux | a new window in the same tmux session (recreated detached if tmux was restarted) |
+| Warp, VS Code / editor terminal, unknown | Terminal (they can't be opened with a command) |
+
+**Fallbacks.** A missing shell falls back to zsh, then bash, then sh; a missing
+terminal to Terminal (it ships with every Mac), then any other installed one,
+then a detached tmux session.
+
+**Permission.** The first restore into Terminal or iTerm2 makes macOS ask
+whether the app running Claude may control it. If that's refused, the session
+is reported as skipped (`automation-denied`) rather than lost: allow it in
+System Settings › Privacy & Security › Automation and restore again.
+
 **Overrides.** Ask for a different shell for one restore, or set a default
 ("always restore in Git Bash"); the default is kept in the plugin's data folder
 and can be cleared any time.
@@ -144,8 +167,14 @@ and can be cleared any time.
   let busy sessions finish first.
 - Claude Code deletes old conversations after its retention period
   (`cleanupPeriodDays`, default 30 days); those can't be resumed.
-- Windows and Linux only for now (no macOS yet); other AI CLIs are not
-  supported yet.
+- **macOS is not yet tested on a real Mac.** Everything that can run on GitHub's
+  macOS runners is tested there (session discovery from `ps`, shell and
+  terminal detection, every restore plan, the session manager). Still unchecked:
+  windows actually opening in Terminal, iTerm2, Ghostty, kitty, WezTerm and
+  Alacritty, the Automation permission prompt, and the exact `procStart` format
+  in Claude Code's session files on macOS (any format falls back to a safe
+  process-name check). Reports from Mac users are welcome.
+- Other AI CLIs are not supported yet.
 
 ## Without Claude
 
@@ -159,7 +188,7 @@ $p = Get-ChildItem "$env:USERPROFILE\.claude\plugins\cache\vslipchenko\sessions"
 powershell -NoProfile -ExecutionPolicy Bypass -File "$($p.FullName)\scripts\sessions.ps1" restore
 ```
 
-On Linux:
+On Linux and macOS:
 
 ```bash
 p=$(ls -d ~/.claude/plugins/cache/vslipchenko/sessions/*/ | sort -V | tail -1)

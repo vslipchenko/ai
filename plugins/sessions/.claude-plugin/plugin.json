@@ -1,7 +1,7 @@
 {
   "name": "sessions",
-  "description": "Save your open Claude Code terminal sessions and reopen them later (after a reboot, a terminal update, or the next day): each resumed in its original folder and terminal. Windows and Linux.",
-  "version": "1.6.0",
+  "description": "Save your open Claude Code terminal sessions and reopen them later (after a reboot, a terminal update, or the next day): each resumed in its original folder and terminal. Windows, Linux and macOS.",
+  "version": "1.7.0",
   "license": "MIT",
   "repository": "https://github.com/vslipchenko/ai/tree/main/plugins/sessions",
   "keywords": [
@@ -13,7 +13,8 @@
     "windows-terminal",
     "linux",
     "tmux",
-    "wsl"
+    "wsl",
+    "macos"
   ],
   "author": {
     "name": "Vladyslav Slipchenko"

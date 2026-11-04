@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Discover, snapshot and restore live Claude Code sessions (Linux).
+"""Discover, snapshot and restore live Claude Code sessions (Linux and macOS).
 
-Linux counterpart of sessions.ps1: same subcommands, flags and JSON output
-(one line on stdout), same snapshot files.
+Linux/macOS counterpart of sessions.ps1: same subcommands, flags and JSON output
+(one line on stdout), same snapshot files. Processes are read from /proc on
+Linux and from `ps` on macOS.
 
   list       Live Claude Code sessions from <ClaudeHome>/sessions/<pid>.json, each
-             checked against the running process via /proc, falling back to
+             checked against the running process, falling back to
              recently written transcripts if that registry is unavailable. Each
              session records its shell (bash / zsh / fish / sh / ...) and, when
              detectable, its terminal (gnome-terminal, konsole, kitty, tmux, wt, ...).
@@ -14,9 +15,10 @@ Linux counterpart of sessions.ps1: same subcommands, flags and JSON output
              yet restored, unless -Force.
   snapshots  Summarise the stored snapshot (normally just one).
   restore    Reopen each session with `claude --resume <id>` in its folder, in the
-             shell and terminal it ran in. Missing shell -> bash -> sh; missing
-             terminal -> Windows Terminal (WSL) / system default / any installed
-             terminal -> a detached tmux session.
+             shell and terminal it ran in. Missing shell -> bash -> sh (macOS:
+             zsh -> bash -> sh); missing terminal -> Windows Terminal (WSL) /
+             system default / any installed terminal (macOS: Terminal) -> a
+             detached tmux session.
   config     Show or set the default restore shell/terminal (-UseShell, -Terminal, -Reset).
   manage     -Enable: start a new snapshot with the sessions in -Ids (may be empty) and
              turn on automatic tracking; -Disable: turn it off (the snapshot stays);
@@ -66,11 +68,24 @@ HOST_NAMES = {
     'tmux: server': 'tmux', 'tmux': 'tmux', 'screen': 'screen', 'SCREEN': 'screen',
     'code': 'vscode', 'code-oss': 'vscode', 'codium': 'vscode', 'cursor': 'vscode', 'windsurf': 'vscode',
     'sshd': 'ssh', 'sshd-session': 'ssh',
+    # macOS (process names as `ps` shows them)
+    'Terminal': 'terminal', 'iTerm2': 'iterm2', 'ghostty': 'ghostty', 'Ghostty': 'ghostty',
+    'Warp': 'warp', 'stable': 'warp', 'Code Helper': 'vscode', 'Code Helper (Plugin)': 'vscode',
+    'Electron': 'vscode', 'Cursor Helper': 'vscode', 'Cursor Helper (Plugin)': 'vscode',
 }
+# TERM_PROGRAM values -> host (used when the process tree doesn't show the terminal).
+TERM_PROGRAMS = {'Apple_Terminal': 'terminal', 'iTerm.app': 'iterm2', 'ghostty': 'ghostty', 'WezTerm': 'wezterm',
+                 'WarpTerminal': 'warp', 'vscode': 'vscode', 'tmux': 'tmux', 'kitty': 'kitty'}
 # Restore preference among installed graphical terminals when the saved one can't be used.
 GUI_TERMINALS = ['gnome-terminal', 'ptyxis', 'kgx', 'konsole', 'xfce4-terminal', 'tilix', 'kitty',
                  'wezterm', 'alacritty', 'foot', 'terminator', 'xterm']
-TERMINAL_CHOICES = ['', 'auto', 'wt', 'tmux', 'x-terminal-emulator'] + GUI_TERMINALS
+# macOS: Terminal ships with every Mac, so it is the final graphical fallback.
+MAC_TERMINALS = ['terminal', 'iterm2', 'ghostty', 'kitty', 'wezterm', 'alacritty']
+# Where macOS apps live, and the binary inside each bundle (None: scripted via AppleScript).
+MAC_APPS = {'terminal': ('Terminal', None), 'iterm2': ('iTerm', None), 'ghostty': ('Ghostty', 'ghostty'),
+            'kitty': ('kitty', 'kitty'), 'wezterm': ('WezTerm', 'wezterm'), 'alacritty': ('Alacritty', 'alacritty')}
+TERMINAL_CHOICES = ['', 'auto', 'wt', 'tmux', 'x-terminal-emulator', 'terminal', 'iterm2', 'ghostty'] + GUI_TERMINALS
+IS_MAC = sys.platform == 'darwin'
 
 
 # ---------------------------------------------------------------- output
@@ -164,6 +179,8 @@ class Ctx:
     def __init__(self, a):
         self.a = a
         self.home = a.ClaudeHome or os.environ.get('CLAUDE_CONFIG_DIR') or os.path.join(os.path.expanduser('~'), '.claude')
+        # macOS behaviour for restore planning; tests force either one with -Platform.
+        self.mac = a.Platform == 'mac' or (IS_MAC and a.Platform != 'linux')
         self._project_dirs = None
         self._boot = None
 
@@ -241,7 +258,7 @@ class Ctx:
         e.update(extra)
         return e
 
-    # -- processes (/proc)
+    # -- processes (/proc on Linux, `ps` on macOS)
     def boot_time(self):
         if self._boot is None:
             self._boot = 0
@@ -254,29 +271,82 @@ class Ctx:
                 pass
         return self._boot
 
-    @staticmethod
-    def proc_stat(pid):
+    def mac_table(self):
+        """pid -> (ppid, start epoch, executable path) for every process, read once per run."""
+        if getattr(self, '_mac_table', None) is None:
+            self._mac_table = {}
+            try:
+                out = subprocess.run(['ps', '-axww', '-o', 'pid=,ppid=,lstart=,comm='], capture_output=True,
+                                     text=True, env=dict(os.environ, LC_ALL='C'), timeout=10).stdout
+            except (OSError, subprocess.SubprocessError):
+                out = ''
+            for line in out.splitlines():
+                parts = line.split(None, 7)  # pid ppid Dow Mon Day HH:MM:SS Year comm
+                if len(parts) < 8:
+                    continue
+                try:
+                    start = time.mktime(time.strptime(' '.join(parts[3:7]), '%b %d %H:%M:%S %Y'))
+                    self._mac_table[int(parts[0])] = (int(parts[1]), start, parts[7])
+                except ValueError:
+                    continue
+        return self._mac_table
+
+    def proc_stat(self, pid):
+        """{'comm', 'ppid', 'start', 'startEpoch'}: comm is the program name (no path, no
+        login-shell dash); start is /proc start ticks on Linux, epoch seconds on macOS."""
         try:
-            with open('/proc/%d/stat' % int(pid), 'rb') as f:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            return None
+        if IS_MAC:
+            row = self.mac_table().get(pid)
+            if not row:
+                return None
+            name = os.path.basename(row[2]).lstrip('-')
+            return {'comm': name, 'ppid': row[0], 'start': int(row[1]), 'startEpoch': row[1], 'path': row[2]}
+        try:
+            with open('/proc/%d/stat' % pid, 'rb') as f:
                 data = f.read().decode('utf-8', 'replace')
-        except (OSError, ValueError):
+        except OSError:
             return None
         r = data.rfind(')')
         rest = data[r + 2:].split()
         try:
-            return {'comm': data[data.find('(') + 1:r], 'ppid': int(rest[1]), 'start': int(rest[19])}
+            ticks = int(rest[19])
+            return {'comm': data[data.find('(') + 1:r], 'ppid': int(rest[1]), 'start': ticks,
+                    'startEpoch': self.boot_time() + ticks / float(os.sysconf('SC_CLK_TCK'))}
         except (IndexError, ValueError):
             return None
 
-    @staticmethod
-    def proc_exe(pid):
+    def proc_exe(self, pid):
+        if IS_MAC:
+            row = self.mac_table().get(int(pid))
+            if not row:
+                return None
+            path = row[2].lstrip('-')
+            return path if path.startswith('/') else shutil.which(path)
         try:
             return os.readlink('/proc/%d/exe' % pid)
         except OSError:
             return None
 
-    @staticmethod
-    def proc_environ(pid):
+    # Environment hints read on macOS (only these: `ps -E` mixes the command line with the environment).
+    MAC_ENV_KEYS = ('TERM_PROGRAM', 'TMUX', 'TMUX_PANE', 'KITTY_WINDOW_ID', 'WEZTERM_PANE', 'ALACRITTY_WINDOW_ID',
+                    'ALACRITTY_SOCKET', 'ITERM_SESSION_ID', 'TERM_SESSION_ID', 'GHOSTTY_RESOURCES_DIR')
+
+    def proc_environ(self, pid):
+        if IS_MAC:
+            try:
+                out = subprocess.run(['ps', '-E', '-ww', '-o', 'command=', '-p', str(int(pid))], capture_output=True,
+                                     text=True, timeout=5).stdout
+            except (OSError, subprocess.SubprocessError, ValueError):
+                return {}
+            env = {}
+            for k in self.MAC_ENV_KEYS:
+                m = re.search(r'(?:^|\s)%s=(\S*)' % k, out)
+                if m:
+                    env[k] = m.group(1)
+            return env
         try:
             with open('/proc/%d/environ' % pid, 'rb') as f:
                 raw = f.read().decode('utf-8', 'replace')
@@ -303,8 +373,9 @@ class Ctx:
             v = float(s)
         except ValueError:
             return is_claude
-        # Also accept the start time expressed as epoch seconds or milliseconds.
-        started = self.boot_time() + st['start'] / float(os.sysconf('SC_CLK_TCK'))
+        # Also accept the start time expressed as epoch seconds or milliseconds
+        # (macOS `ps` only gives whole seconds, hence the tolerance).
+        started = st['startEpoch']
         if abs(v - started) < 2 or abs(v / 1000.0 - started) < 2:
             return True
         # A start-time format we don't know: trust a matching process name rather than
@@ -349,9 +420,13 @@ class Ctx:
             tp = env.get('TERM_PROGRAM', '')
             if env.get('TMUX'):
                 info['host'] = 'tmux'
-            elif tp == 'vscode':
-                info['host'] = 'vscode'
-            elif tp == 'WezTerm' or env.get('WEZTERM_PANE'):
+            elif tp in TERM_PROGRAMS:
+                info['host'] = TERM_PROGRAMS[tp]
+            elif env.get('ITERM_SESSION_ID'):
+                info['host'] = 'iterm2'
+            elif env.get('GHOSTTY_RESOURCES_DIR'):
+                info['host'] = 'ghostty'
+            elif env.get('WEZTERM_PANE'):
                 info['host'] = 'wezterm'
             elif env.get('KITTY_WINDOW_ID'):
                 info['host'] = 'kitty'
@@ -799,31 +874,56 @@ def find_windows_exe(name):
     return None
 
 
+def mac_app(name):
+    """Path of an installed macOS app bundle, or None."""
+    for d in ('/Applications', os.path.expanduser('~/Applications'), '/System/Applications/Utilities',
+              '/System/Applications', '/Applications/Utilities'):
+        p = os.path.join(d, name + '.app')
+        if os.path.isdir(p):
+            return p
+    return None
+
+
 def availability(c):
     a = c.a
-    gui = bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
+    mac = c.mac
+    gui = mac or bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
     if a.Shells is not None or a.Terminals is not None:
         # Test overrides: pretend exactly these shells / terminals are installed.
         listed_shells = set(s for s in (a.Shells or '').split(',') if s)
         listed_terms = set(t for t in (a.Terminals or '').split(',') if t)
         shells = {s: (shutil.which(s) or '/bin/' + s) if s in listed_shells else None for s in RESTORABLE_SHELLS}
-        terms = {t: shutil.which(t) or '/usr/bin/' + t for t in GUI_TERMINALS + ['x-terminal-emulator', 'tmux']
-                 if t in listed_terms}
-        wsl = 'wt' in listed_terms
+        names = (MAC_TERMINALS if mac else GUI_TERMINALS + ['x-terminal-emulator']) + ['tmux']
+        terms = {t: shutil.which(t) or '/usr/bin/' + t for t in names if t in listed_terms}
+        wsl = 'wt' in listed_terms and not mac
         if wsl:
             terms.update({'wt': 'wt.exe', '_wsl': 'wsl.exe', '_distro': os.environ.get('WSL_DISTRO_NAME') or 'Ubuntu'})
-        return {'shells': shells, 'terms': terms, 'wsl': wsl, 'gui': True}
+        return {'shells': shells, 'terms': terms, 'wsl': wsl, 'gui': True, 'mac': mac}
 
     shells = {s: shutil.which(s) for s in RESTORABLE_SHELLS}
     terms = {}
-    if gui:
+    if mac:
+        for t in MAC_TERMINALS:
+            app_name, binary = MAC_APPS[t]
+            app = mac_app(app_name)
+            if binary is None:
+                if app and shutil.which('osascript'):
+                    terms[t] = app
+                continue
+            # The app's own binary, or its command-line tool on PATH (e.g. installed by Homebrew).
+            inside = os.path.join(app, 'Contents', 'MacOS', binary) if app else None
+            if inside and os.path.isfile(inside):
+                terms[t] = app if t == 'ghostty' else inside
+            elif shutil.which(binary) and t != 'ghostty':
+                terms[t] = shutil.which(binary)
+    elif gui:
         for t in GUI_TERMINALS + ['x-terminal-emulator']:
             exe = shutil.which(t)
             if exe:
                 terms[t] = exe
     if shutil.which('tmux'):
         terms['tmux'] = shutil.which('tmux')
-    wsl = in_wsl()
+    wsl = (not mac) and in_wsl()
     if wsl:
         wt, wslexe = find_windows_exe('wt.exe'), find_windows_exe('wsl.exe')
         distro = os.environ.get('WSL_DISTRO_NAME')
@@ -831,7 +931,7 @@ def availability(c):
             # wt.exe runs the tab's command on the Windows side, so name wsl.exe the Windows
             # way (it's always in System32), not by its /mnt/c path.
             terms.update({'wt': wt, '_wsl': 'wsl.exe', '_distro': distro})
-    return {'shells': shells, 'terms': terms, 'wsl': wsl, 'gui': gui}
+    return {'shells': shells, 'terms': terms, 'wsl': wsl, 'gui': gui, 'mac': mac}
 
 
 def resolve_target(item, avail, shell_pref, term_pref):
@@ -839,12 +939,14 @@ def resolve_target(item, avail, shell_pref, term_pref):
     saved_host = item.get('host')
     notes = []
 
-    wanted_shell = shell_pref or saved_shell or os.path.basename(os.environ.get('SHELL') or '') or 'bash'
+    default_shell = 'zsh' if avail.get('mac') else 'bash'   # macOS's default shell is zsh
+    wanted_shell = shell_pref or saved_shell or os.path.basename(os.environ.get('SHELL') or '') or default_shell
     if wanted_shell not in RESTORABLE_SHELLS:
         notes.append('%s is not supported for restoring' % wanted_shell)
-        wanted_shell = 'bash'
+        wanted_shell = default_shell
+    order = ('zsh', 'bash', 'sh') if avail.get('mac') else ('bash', 'sh')
     shell = None
-    for s in [wanted_shell] + [x for x in ('bash', 'sh') if x != wanted_shell]:
+    for s in [wanted_shell] + [x for x in order if x != wanted_shell]:
         if avail['shells'].get(s):
             shell = s
             break
@@ -860,9 +962,12 @@ def resolve_target(item, avail, shell_pref, term_pref):
     elif saved_host:
         wanted_terms.append(saved_host)
     fallbacks = []
-    if avail['wsl']:
-        fallbacks.append('wt')
-    fallbacks += ['x-terminal-emulator'] + GUI_TERMINALS + ['tmux']
+    if avail.get('mac'):
+        fallbacks += MAC_TERMINALS + ['tmux']   # Terminal first: it ships with every Mac
+    else:
+        if avail['wsl']:
+            fallbacks.append('wt')
+        fallbacks += ['x-terminal-emulator'] + GUI_TERMINALS + ['tmux']
     chosen = None
     for t in wanted_terms + [f for f in fallbacks if f not in wanted_terms]:
         if t in terms and not t.startswith('_'):
@@ -872,10 +977,11 @@ def resolve_target(item, avail, shell_pref, term_pref):
         return None
     for w in wanted_terms:
         if w != chosen:
-            if w in ('vscode', 'screen', 'ssh'):
+            if w in ('vscode', 'screen', 'ssh', 'warp'):
                 notes.append({'vscode': "editor terminals can't be opened from outside",
                               'screen': 'screen sessions are not restored',
-                              'ssh': 'it ran over SSH'}[w])
+                              'ssh': 'it ran over SSH',
+                              'warp': "Warp can't be opened with a command"}[w])
             else:
                 notes.append('%s not available' % w)
     fallback = '; '.join(dict.fromkeys(notes)) if notes else None
@@ -899,8 +1005,24 @@ def build_spec(target, sid, cwd, title, claude, avail):
     term = target['terminal']
     terms = avail['terms']
     exe = terms.get(term)
-    spec = {'command': cmd, 'argv': None, 'wtTab': None, 'tmux': None}
-    if term == 'wt':
+    spec = {'command': cmd, 'argv': None, 'wtTab': None, 'tmux': None, 'osa': None}
+    typed = 'exec ' + ' '.join(posix_quote(x) for x in run)   # what the new Terminal/iTerm2 window runs
+    if term == 'terminal':
+        # The command and title are passed as osascript arguments, never pasted into the
+        # script text, so they need no AppleScript escaping.
+        spec['osa'] = {'app': 'Terminal', 'args': [typed, t], 'script': [
+            'on run argv', 'tell application "Terminal"', 'activate',
+            'set newTab to do script (item 1 of argv)', 'set custom title of newTab to (item 2 of argv)',
+            'end tell', 'end run']}
+    elif term == 'iterm2':
+        spec['osa'] = {'app': 'iTerm', 'args': [typed, t], 'script': [
+            'on run argv', 'tell application "iTerm"', 'activate',
+            'set newWindow to (create window with default profile)', 'tell current session of newWindow',
+            'write text (item 1 of argv)', 'set name to (item 2 of argv)', 'end tell', 'end tell', 'end run']}
+    elif term == 'ghostty':
+        # Ghostty on macOS is started through `open`; everything after --args goes to Ghostty.
+        spec['argv'] = ['open', '-na', exe, '--args', '--working-directory=' + cwd, '--title=' + t, '-e'] + run
+    elif term == 'wt':
         tab = ['new-tab', '--title', t, terms['_wsl'], '-d', terms['_distro'], '--cd', cwd, '-e'] + run
         spec['wtTab'] = [x.replace(';', '\\;') for x in tab]
     elif term == 'tmux':
@@ -945,6 +1067,25 @@ def spawn(argv, cwd, env):
                      stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
 
 
+def run_osascript(osa, env):
+    """Opens a Terminal / iTerm2 window via AppleScript. Returns None, or {'reason', 'detail'}."""
+    argv = ['osascript']
+    for line in osa['script']:
+        argv += ['-e', line]
+    argv += osa['args']
+    try:
+        r = subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as e:
+        return {'reason': 'launch-failed', 'detail': str(e)}
+    if r.returncode == 0:
+        return None
+    detail = (r.stderr or r.stdout or '').strip()[:300]
+    # -1743: "Not authorized to send Apple events" (System Settings > Privacy & Security > Automation).
+    if '-1743' in detail or 'not authorized' in detail.lower() or 'not allowed' in detail.lower():
+        return {'reason': 'automation-denied', 'detail': detail}
+    return {'reason': 'launch-failed', 'detail': detail}
+
+
 def tmux_has_session(tmux, name, env):
     return subprocess.run([tmux, 'has-session', '-t', '=' + name], env=env, stdout=subprocess.DEVNULL,
                           stderr=subprocess.DEVNULL).returncode == 0
@@ -976,10 +1117,14 @@ def cmd_restore(c):
 
     claude = a.ClaudeExe or shutil.which('claude')
     if not claude:
-        local = os.path.join(os.path.expanduser('~'), '.local', 'bin', 'claude')
-        claude = local if os.path.isfile(local) else None
+        # Native installer, then Homebrew (Apple silicon, Intel).
+        for cand in (os.path.join(os.path.expanduser('~'), '.local', 'bin', 'claude'), '/opt/homebrew/bin/claude',
+                     '/usr/local/bin/claude'):
+            if os.path.isfile(cand):
+                claude = cand
+                break
     if not claude:
-        fail('claude-not-found', 'The claude executable was not found (PATH or ~/.local/bin).')
+        fail('claude-not-found', 'The claude executable was not found (PATH, ~/.local/bin or Homebrew).')
 
     # Per-run flags win over the saved preference, which wins over what each session ran in.
     cfg = c.read_config(data)
@@ -1025,6 +1170,15 @@ def cmd_restore(c):
                     'fallback': target['fallback'], 'command': spec['command']})
         if spec['tmux']:
             row['tmuxSession'] = spec['tmux']['session']
+        # How the window is opened (for reports, troubleshooting and tests).
+        if spec['osa']:
+            row['launch'] = {'type': 'osascript', 'app': spec['osa']['app'], 'args': spec['osa']['args']}
+        elif spec['argv']:
+            row['launch'] = {'type': 'exec', 'argv': spec['argv']}
+        elif spec['tmux']:
+            row['launch'] = {'type': 'tmux', 'session': spec['tmux']['session'], 'command': spec['tmux']['shell']}
+        elif spec['wtTab']:
+            row['launch'] = {'type': 'wt', 'tab': spec['wtTab']}
         specs[sid] = spec
         launch.append(row)
 
@@ -1037,6 +1191,7 @@ def cmd_restore(c):
         wt_rows = [r for r in launch if r['terminal'] == 'wt']
         wt_done = False
         windows_left = sum(1 for r in launch if r['terminal'] not in ('wt', 'tmux'))
+        failed = {}
         for r in launch:
             spec = specs[r['sessionId']]
             if r['terminal'] == 'wt':
@@ -1062,13 +1217,26 @@ def cmd_restore(c):
                     argv = [tm, 'new-session', '-d', '-s', t['session'], '-c', r['cwd'], '-n', t['window'], t['shell']]
                 subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             else:
-                spawn(spec['argv'], r['cwd'], env)
+                if spec['osa']:
+                    err = run_osascript(spec['osa'], env)
+                    if err:
+                        failed[r['sessionId']] = err
+                else:
+                    spawn(spec['argv'], r['cwd'], env)
                 windows_left -= 1
                 if windows_left:
                     time.sleep(0.7)
 
+        # A window that couldn't be opened (e.g. macOS refused permission to control the terminal)
+        # is reported as skipped, and not settled, so the next restore tries it again.
+        if failed:
+            for r in [x for x in launch if x['sessionId'] in failed]:
+                launch.remove(r)
+                skipped.append({'sessionId': r['sessionId'], 'title': r['title'], 'cwd': r['cwd'],
+                                'terminal': r['terminal'], 'reason': failed[r['sessionId']]['reason'],
+                                'detail': failed[r['sessionId']]['detail']})
         # Settled = opened now, or can never be opened; `save` may replace a snapshot once all are settled.
-        permanent = [s['sessionId'] for s in skipped if s['reason'] != 'no-terminal']
+        permanent = [s['sessionId'] for s in skipped if s['reason'] not in ('no-terminal', 'automation-denied', 'launch-failed')]
         if launch or permanent:
             # Re-read under the lock: while sessions start, their hooks may already be updating it.
             with SnapshotLock(data):
@@ -1115,6 +1283,7 @@ def main(argv=None):
     p.add_argument('-ClaudePid', default='')
     p.add_argument('-Terminals', default=None, help=argparse.SUPPRESS)
     p.add_argument('-Shells', default=None, help=argparse.SUPPRESS)
+    p.add_argument('-Platform', default='', choices=('', 'linux', 'mac'), help=argparse.SUPPRESS)
     a = p.parse_args(argv)
     c = Ctx(a)
     try:

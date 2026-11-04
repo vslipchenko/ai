@@ -105,7 +105,12 @@ try {
         Write-Registry $home3 $inner.ProcessId $H $projA ((Get-Process -Id $inner.ProcessId).StartTime.ToFileTimeUtc().ToString()) 'interactive'
         $r = Run @('list', '-ClaudeHome', $home3)
         $conSession = @($r.sessions)[0]
-        Assert ($conSession.sessionId -eq $H -and $conSession.shell -eq 'cmd' -and $conSession.host -eq 'console') 'detects a standalone console window'
+        if ($env:GITHUB_ACTIONS -and (Get-Process -Id $cmdP.ProcessId).MainWindowHandle -eq [IntPtr]::Zero) {
+            # Hosted CI runners have no visible desktop, so a console window gets no handle there.
+            Write-Host '  note detects a standalone console window: skipped (no visible desktop on this runner)'
+        } else {
+            Assert ($conSession.sessionId -eq $H -and $conSession.shell -eq 'cmd' -and $conSession.host -eq 'console') 'detects a standalone console window'
+        }
     } finally {
         Stop-Process -Id $con.Id -ErrorAction SilentlyContinue
         if ($inner) { Stop-Process -Id $inner.ProcessId -ErrorAction SilentlyContinue }

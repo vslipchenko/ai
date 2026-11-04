@@ -1,13 +1,13 @@
 ---
 name: save
-description: Save the currently open Claude Code terminal sessions (session id + folder + shell) so they can be closed and reopened later (after a reboot, a terminal update, or the next day) with the `restore` skill. Lists the live sessions and lets the user pick which to keep; replaces the previously saved set (asking first if it was never restored). Use when the user wants to save / snapshot / remember / bookmark their open Claude sessions or terminals, e.g. "save my sessions", "I need to reboot, save my claude sessions", "save my sessions, I'm updating my terminal", "save these so I can continue tomorrow". Windows and Linux.
+description: Save the currently open Claude Code terminal sessions (session id + folder + shell) so they can be closed and reopened later (after a reboot, a terminal update, or the next day) with the `restore` skill. Lists the live sessions and lets the user pick which to keep; replaces the previously saved set (asking first if it was never restored). Use when the user wants to save / snapshot / remember / bookmark their open Claude sessions or terminals, e.g. "save my sessions", "I need to reboot, save my claude sessions", "save my sessions, I'm updating my terminal", "save these so I can continue tomorrow". Windows, Linux and macOS.
 ---
 
 # Sessions — Save
 
 Snapshot the live Claude Code sessions the user picks, so `restore` can reopen
 each one in its folder (`claude --resume <id>`) whenever the user wants them
-back. Windows and Linux.
+back. Windows, Linux and macOS.
 
 ## Script
 
@@ -19,13 +19,13 @@ and JSON output are identical.
   ```
   powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/sessions.ps1" <command> [options]
   ```
-- **Linux** — run with Bash:
+- **Linux and macOS** — run with Bash:
   ```
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sessions.py" <command> [options]
   ```
-  If `python3` is not installed, tell the user the plugin needs Python 3 on
-  Linux (e.g. `sudo apt install python3`) and stop.
-- **macOS** — not supported yet: say so and stop.
+  If `python3` is not installed, tell the user the plugin needs Python 3 and
+  stop: on Linux e.g. `sudo apt install python3`; on macOS `xcode-select --install`
+  (Apple's Command Line Tools, which include `/usr/bin/python3`).
 
 If `${CLAUDE_PLUGIN_ROOT}` above was not replaced with a real path, use the
 folder two levels above this skill's base directory instead. Pass
@@ -49,6 +49,9 @@ terminal:
 - Linux — `shell`: `bash` / `zsh` / `fish` / `sh` / others; `host`: the
   terminal (`gnome-terminal`, `konsole`, `kitty`, `xterm`, …), `tmux` (with
   `tmuxSession`), `wt` (WSL in Windows Terminal), `vscode`, `ssh`;
+- macOS — `shell`: `zsh` / `bash` / `fish` / `sh`; `host`: `terminal`
+  (Apple's Terminal), `iterm2`, `ghostty`, `kitty`, `wezterm`, `alacritty`,
+  `warp`, `tmux`, `vscode`;
 - either may be null when it couldn't be detected.
 
 Only one snapshot is kept: saving replaces the previous one. When the previous

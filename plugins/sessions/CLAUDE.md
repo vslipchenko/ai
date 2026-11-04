@@ -113,6 +113,33 @@
 - Hidden test overrides `-Terminals` / `-Shells` pretend exactly those are
   installed, so planning tests don't depend on the machine.
 
+## macOS (`sessions.py`, `IS_MAC`)
+- Same script as Linux. Processes come from one `ps -axww -o pid=,ppid=,lstart=,comm=`
+  table per run (`LC_ALL=C`; start = epoch seconds from `lstart`); `comm` is a
+  path, and login shells show as `-zsh` — strip both. Environment hints come
+  from `ps -E` (only the keys in `MAC_ENV_KEYS`).
+- `procStart` format in Claude Code's macOS session files is **unverified**;
+  liveness accepts epoch s/ms within 2 s, else falls back to the process name.
+- Terminal and iTerm2 open via `osascript`, with the command and title passed
+  as `argv` to `on run argv` — never interpolated into AppleScript text. The run
+  is waited for: error -1743 / "not authorized" → skip reason
+  `automation-denied`, other errors → `launch-failed` (neither is settled, so a
+  later restore retries). Ghostty: `open -na <app> --args …`; kitty, WezTerm,
+  Alacritty: the binary inside the app bundle (or on PATH) with the Linux args.
+- Fallbacks: shells zsh → bash → sh; terminals saved → `MAC_TERMINALS`
+  (Terminal first) → tmux. Warp / editors can't be launched → Terminal.
+- `-Platform mac|linux` (hidden) forces either behaviour, so macOS planning tests
+  run in WSL too. `launch` in restore rows shows exactly how a window opens.
+- Not yet verified on a real Mac: windows really opening, the Automation prompt,
+  `procStart`. The CI macOS job runs everything else (Apple's `/usr/bin/python3`).
+
+## CI
+`.github/workflows/sessions-plugin.yml` runs the suites on macOS, Linux and
+Windows runners for changes under `plugins/sessions/`. Results are also emitted
+as annotations (error / notice), readable without auth:
+`https://api.github.com/repos/vslipchenko/ai/actions/runs` → the run's
+`check_suite` → check-runs → `/annotations`.
+
 ## Tests
 ```
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\tests\sessions.tests.ps1          # Windows, fast

@@ -18,7 +18,7 @@ skills/<name>/                    standalone skills, independent of any plugin
 | Plugin | Description |
 |---|---|
 | [`estimator`](plugins/estimator) | Estimate Jira tickets from your team's actual history. Pulls resolved tickets via the Atlassian MCP to build a baseline, then suggests effort/story-point estimates by comparing new work to similar past tickets. |
-| [`sessions`](plugins/sessions) | Save your open Claude Code terminal sessions and reopen them later (after a reboot, a terminal update, or the next day): each resumed in its original folder and terminal. Windows and Linux. |
+| [`sessions`](plugins/sessions) | Save your open Claude Code terminal sessions and reopen them later (after a reboot, a terminal update, or the next day): each resumed in its original folder and terminal. Windows, Linux and macOS. |
 
 See each plugin's own README for setup, usage, and requirements.
 
