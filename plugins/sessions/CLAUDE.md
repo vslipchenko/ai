@@ -3,7 +3,7 @@
 (Only read when working in this repo; no effect on the installed plugin.)
 
 ## Layout
-- `skills/save/SKILL.md`, `skills/restore/SKILL.md`, `skills/clear/SKILL.md` — interaction only (listing,
+- `skills/save/SKILL.md`, `skills/restore/SKILL.md`, `skills/clear/SKILL.md` (+ `skills/remove/SKILL.md`, a slash-only alias that defers to `clear`; skills have no alias field) — interaction only (listing,
   asking, reporting); they pick the script by OS.
 - `scripts/sessions.ps1` (Windows) and `scripts/sessions.py` (Linux) — all
   discovery, snapshot I/O and terminal launching. Same subcommands

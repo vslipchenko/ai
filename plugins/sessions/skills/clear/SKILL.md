@@ -1,6 +1,6 @@
 ---
 name: clear
-description: Delete the saved set of Claude Code sessions (the snapshot made by the `save` skill) without restoring it — only the saved list, never the conversations themselves. Asks first if some saved sessions were never restored. Use when the user wants to remove / delete / clear / discard / forget their saved sessions or snapshot, e.g. "clear my saved sessions", "delete the sessions snapshot", "forget the sessions I saved", "start fresh before a demo", optionally also resetting the restore defaults ("and reset my restore settings"). Windows and Linux.
+description: Delete the saved set of Claude Code sessions (the snapshot made by the `save` skill) without restoring it — only the saved list, never the conversations themselves. Asks first if some saved sessions were never restored. Use when the user wants to remove / delete / clear / discard / forget their saved sessions or snapshot, e.g. "clear sessions", "remove sessions", "clear my saved sessions", "remove my saved sessions", "delete the sessions snapshot", "forget the sessions I saved", "start fresh before a demo", optionally also resetting the restore defaults ("and reset my restore settings"). Windows and Linux.
 ---
 
 # Sessions — Clear
