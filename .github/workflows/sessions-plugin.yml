@@ -5,21 +5,31 @@ on:
     paths:
       - 'plugins/sessions/**'
       - '.github/workflows/sessions-plugin.yml'
+      - '.github/annotate.py'
   pull_request:
     paths:
       - 'plugins/sessions/**'
       - '.github/workflows/sessions-plugin.yml'
+      - '.github/annotate.py'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Each job prints its test output and also reports it as an annotation (error on
-# failure, notice on success), so results can be read without downloading logs.
+# Each job prints its test output and reports the result as short annotations
+# (.github/annotate.py), so results can be read without downloading logs.
 
 jobs:
   macos:
-    runs-on: macos-latest
+    # Two macOS pools: Apple silicon (macos-latest) is often short of capacity, so the
+    # Intel image (macos-15-intel) gives macOS results even when one pool is starved.
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [macos-latest, macos-15-intel]
+    name: macos (${{ matrix.image }})
+    runs-on: ${{ matrix.image }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Install tmux
@@ -32,8 +42,7 @@ jobs:
           /usr/bin/python3 -I plugins/sessions/scripts/tests/test_sessions.py > out.txt 2>&1
           status=$?
           cat out.txt
-          body=$(/usr/bin/python3 -c 'import sys; t=open("out.txt").read()[-6000:]; print(t.replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')
-          if [ $status -ne 0 ]; then echo "::error title=macOS tests failed::$body"; else echo "::notice title=macOS tests passed::$body"; fi
+          /usr/bin/python3 .github/annotate.py "macOS tests (${{ matrix.image }})" out.txt $status
           exit $status
       - name: Real launches (Terminal / tmux; may be blocked by the Automation permission on a runner)
         shell: bash
@@ -43,12 +52,12 @@ jobs:
           SESSIONS_LAUNCH=1 /usr/bin/python3 -I plugins/sessions/scripts/tests/test_sessions.py SessionsTests.test_real_launches > launch.txt 2>&1
           status=$?
           cat launch.txt
-          body=$(/usr/bin/python3 -c 'import sys; t=open("launch.txt").read()[-6000:]; print(t.replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')
-          if [ $status -ne 0 ]; then echo "::warning title=macOS real launches failed::$body"; else echo "::notice title=macOS real launches::$body"; fi
+          /usr/bin/python3 .github/annotate.py "macOS real launches (${{ matrix.image }})" launch.txt $status
           exit $status
 
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Tests
@@ -59,21 +68,23 @@ jobs:
           python3 -I plugins/sessions/scripts/tests/test_sessions.py > out.txt 2>&1
           status=$?
           cat out.txt
-          body=$(python3 -c 'import sys; t=open("out.txt").read()[-6000:]; print(t.replace("%","%25").replace("\r","%0D").replace("\n","%0A"))')
-          if [ $status -ne 0 ]; then echo "::error title=Linux tests failed::$body"; else echo "::notice title=Linux tests passed::$body"; fi
+          python3 .github/annotate.py "Linux tests" out.txt $status
           exit $status
 
   windows:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
       - name: Tests (Windows PowerShell 5.1)
         shell: powershell
         run: |
-          $out = powershell -NoProfile -ExecutionPolicy Bypass -File plugins\sessions\scripts\tests\sessions.tests.ps1 2>&1 | Out-String
+          # Out-File -Encoding utf8 (`>` would write UTF-16 in Windows PowerShell 5.1).
+          powershell -NoProfile -ExecutionPolicy Bypass -File plugins\sessions\scripts\tests\sessions.tests.ps1 | Out-File -Encoding utf8 out.txt
           $status = $LASTEXITCODE
-          Write-Output $out
-          $tail = $out.Substring([Math]::Max(0, $out.Length - 6000))
-          $body = $tail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-          if ($status -ne 0) { Write-Output "::error title=Windows tests failed::$body" } else { Write-Output "::notice title=Windows tests passed::$body" }
+          Get-Content out.txt
+          python .github/annotate.py "Windows tests" out.txt $status
           exit $status

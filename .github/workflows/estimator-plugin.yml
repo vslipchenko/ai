@@ -25,7 +25,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macos-15-intel too: the Apple-silicon pool (macos-latest) is often short of capacity.
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -55,12 +56,13 @@ jobs:
             echo "$out"
             summary+="$r node   $f: $(echo "$out" | grep -aoE '(tests|pass|fail) [0-9]+' | tr '\n' ' ')"$'\n'
           done
-          for name in "${failed[@]}"; do summary+="failed: $name"$'\n'; done
           echo "$summary"
-          body=$(printf '%s' "$summary" | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')
+          # Short single-line annotations (long multi-line ones may be dropped).
           title="estimator tests on ${{ matrix.os }}"
+          total=$(printf '%s' "$summary" | grep -c '^ok  ')
           if [ ${#failed[@]} -gt 0 ]; then
-            echo "::error title=$title failed::$body"
+            for name in "${failed[@]}"; do echo "::error title=$title::failed: $name"; done
+            echo "::error title=$title failed::${#failed[@]} file(s) failed, $total passed"
             exit 1
           fi
-          echo "::notice title=$title passed::$body"
+          echo "::notice title=$title passed::all $total test files passed (Python and Node)"
