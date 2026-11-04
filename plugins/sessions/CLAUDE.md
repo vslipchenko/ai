@@ -108,7 +108,10 @@
   needs `;`, escaped as `\;` for wt), so they survive wt.exe → wsl.exe.
 - Launch: `start_new_session=True`, stdio to /dev/null, env with markers removed.
   tmux: new window in the saved session if it exists, else a detached new
-  session. Fallback order: saved terminal → wt (WSL) → x-terminal-emulator →
+  session; its exit code is checked (errors → `launch-failed` with tmux's message,
+  not settled). Socket paths are limited (~104 chars on macOS, 108 on Linux):
+  tests use a short `TMUX_TMPDIR` under `/tmp`, never the long macOS temp dir.
+  Fallback order: saved terminal → wt (WSL) → x-terminal-emulator →
   `GUI_TERMINALS` → tmux; shells: wanted → bash → sh.
 - Hidden test overrides `-Terminals` / `-Shells` pretend exactly those are
   installed, so planning tests don't depend on the machine.

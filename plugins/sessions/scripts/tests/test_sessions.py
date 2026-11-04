@@ -662,6 +662,26 @@ class SessionsTests(unittest.TestCase):
         self.assertEqual(sorted(s['reason'] for s in r['skipped']), ['launch-failed'] * 2)
         self.assertEqual(calls, 2, 'other errors are not cached')
 
+    def test_tmux_launch_error_reported(self):
+        """If tmux can't start (here: a socket path over the OS limit), restore says so instead of
+        reporting the session as opened, and leaves it pending."""
+        if not shutil.which('tmux'):
+            self.skipTest('tmux not installed')
+        e = self.env
+        deep = os.path.join(e.root, 'x' * 60, 'y' * 60)
+        os.makedirs(deep)
+        data = os.path.join(e.root, 'tmux-err-data')
+        e.snapshot('snapshot-20260101-000000.json', [{'sessionId': E, 'cwd': e.proj, 'title': 't', 'shell': 'bash',
+                                                      'host': 'tmux', 'tmuxSession': 'err-test'}],
+                   data=data, settledSessionIds=[])
+        r = run('restore', *self.h(), '-DataDir', data, '-ClaudeExe', '/x/claude', '-Terminals', 'tmux',
+                '-Shells', 'bash', '-Platform', 'mac' if IS_MAC else 'linux', env=dict(os.environ, TMUX_TMPDIR=deep))
+        self.assertEqual(r['launched'], [])
+        self.assertEqual([s['reason'] for s in r['skipped']], ['launch-failed'])
+        self.assertIn('tmux', r['skipped'][0]['detail'])
+        with open(os.path.join(data, 'snapshots', 'snapshot-20260101-000000.json')) as f:
+            self.assertNotIn(E, json.load(f).get('settledSessionIds') or [], 'not marked restored')
+
     def test_term_program_hint(self):
         """With no terminal in the process tree (CI, WSL), TERM_PROGRAM names the terminal."""
         if not (os.environ.get('CI') or os.environ.get('WSL_DISTRO_NAME')):
@@ -738,8 +758,12 @@ class SessionsTests(unittest.TestCase):
         os.chmod(fake, 0o755)
         data = os.path.join(e.root, 'launch-data')
         e.snapshot('snapshot-29990101-000000.json', [{'sessionId': E, 'cwd': e.proj, 'title': 'launch test'}], data=data)
+        # A short tmux socket folder: socket paths are limited to ~104 characters (macOS) / 108 (Linux),
+        # and macOS temp folders (/var/folders/...) are long.
+        tmux_dir = tempfile.mkdtemp(prefix='st-', dir='/tmp')
+        self.addCleanup(shutil.rmtree, tmux_dir, True)
         env = dict(os.environ, CLAUDE_CODE_CHILD_SESSION='1', CLAUDECODE='1', CLAUDE_CODE_SESSION_ID='parent',
-                   TMUX_TMPDIR=tempfile.mkdtemp(prefix='tmux-', dir=e.root))
+                   TMUX_TMPDIR=tmux_dir)
         if IS_MAC:
             apps = {'terminal': 'Terminal', 'iterm2': 'iTerm', 'ghostty': 'Ghostty', 'kitty': 'kitty',
                     'wezterm': 'WezTerm', 'alacritty': 'Alacritty'}

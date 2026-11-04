@@ -1224,7 +1224,16 @@ def cmd_restore(c):
                     argv = [tm, 'new-window', '-t', '=' + t['session'] + ':', '-c', r['cwd'], '-n', t['window'], t['shell']]
                 else:
                     argv = [tm, 'new-session', '-d', '-s', t['session'], '-c', r['cwd'], '-n', t['window'], t['shell']]
-                subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # tmux returns at once (the window runs on its server), so its errors can be caught,
+                # e.g. a server that can't start because its socket path is too long (macOS: 104 chars).
+                try:
+                    res = subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                         timeout=30)
+                    if res.returncode != 0:
+                        failed[r['sessionId']] = {'reason': 'launch-failed',
+                                                  'detail': ('tmux: ' + (res.stderr or res.stdout or '').strip())[:300]}
+                except (OSError, subprocess.SubprocessError) as ex:
+                    failed[r['sessionId']] = {'reason': 'launch-failed', 'detail': ('tmux: %s' % ex)[:300]}
             else:
                 if spec['osa']:
                     app = spec['osa']['app']
