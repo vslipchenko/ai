@@ -723,6 +723,12 @@ class SessionsTests(unittest.TestCase):
                 print('  note real launch: %s in %s blocked by macOS Automation permission: %s'
                       % (sh, term, blocked[0].get('detail')))
                 continue
+            if not r.get('launched'):
+                # Not opened at all: report why (reason + detail), don't hide it behind an IndexError.
+                why = ['%s (%s)' % (s.get('reason'), s.get('detail') or s.get('terminal') or '') for s in r.get('skipped', [])]
+                failures.append('%s/%s: not launched: %s %s' % (term, sh, '; '.join(why) or 'no reason given',
+                                                              r.get('message') or ''))
+                continue
             ok = wait_for(lambda: os.path.exists(marker), 25)
             got = ''
             if ok:

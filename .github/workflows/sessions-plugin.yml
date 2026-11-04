@@ -31,7 +31,7 @@ jobs:
     runs-on: ${{ matrix.image }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install tmux
         run: brew install tmux || echo "tmux not installed; tmux tests will be skipped"
       - name: Tests (Apple's /usr/bin/python3, as on a real Mac)
@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tests
         shell: bash
         run: |
@@ -75,8 +75,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
       - name: Tests (Windows PowerShell 5.1)
