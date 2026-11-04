@@ -47,6 +47,11 @@ working **in** this repo — it has no effect on the installed plugin.)
 - Verify cross-runtime parity by running both CLIs on a shared fixture and diffing
   stdout when you touch a script.
 - Run `claude plugin validate .` before considering a change done.
+- CI: `.github/workflows/estimator-plugin.yml` runs every Python and Node test
+  file (each on its own) on Windows, Linux and macOS for changes under
+  `plugins/estimator/`, and reports the result as an annotation (error /
+  notice). On a Windows machine without a real Python, CI is where the Python
+  suites get run.
 
 ## Conventions
 - Don't commit `__pycache__/`, `*.pyc`, `node_modules/`, `.idea/`, `.estimator/`,

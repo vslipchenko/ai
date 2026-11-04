@@ -1,0 +1,66 @@
+name: estimator plugin
+
+on:
+  push:
+    paths:
+      - 'plugins/estimator/**'
+      - '.github/workflows/estimator-plugin.yml'
+  pull_request:
+    paths:
+      - 'plugins/estimator/**'
+      - '.github/workflows/estimator-plugin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Every script has a Python and a Node implementation that must behave the same;
+# users can end up on either runtime on any OS, so both suites run on all three.
+# Each test file runs on its own (`node --test <dir>` is unreliable). Results are
+# also reported as an annotation (error on failure, notice on success), so they
+# can be read without downloading logs.
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+      - name: Python and Node test suites
+        shell: bash
+        working-directory: plugins/estimator
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python --version
+          node --version
+          failed=()
+          summary=""
+          for f in $(find . -path ./node_modules -prune -o -name 'test_*.py' -print | sort); do
+            if out=$(python "$f" 2>&1); then r="ok  "; else r="FAIL"; failed+=("python $f"); fi
+            echo "$out"
+            summary+="$r python $f: $(echo "$out" | grep -E '^Ran ' | head -1)"$'\n'
+          done
+          for f in $(find . -path ./node_modules -prune -o -name '*.test.mjs' -print | sort); do
+            if out=$(node --test "$f" 2>&1); then r="ok  "; else r="FAIL"; failed+=("node $f"); fi
+            echo "$out"
+            summary+="$r node   $f: $(echo "$out" | grep -aoE '(tests|pass|fail) [0-9]+' | tr '\n' ' ')"$'\n'
+          done
+          for name in "${failed[@]}"; do summary+="failed: $name"$'\n'; done
+          echo "$summary"
+          body=$(printf '%s' "$summary" | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')
+          title="estimator tests on ${{ matrix.os }}"
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "::error title=$title failed::$body"
+            exit 1
+          fi
+          echo "::notice title=$title passed::$body"
