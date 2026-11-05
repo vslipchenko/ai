@@ -23,13 +23,19 @@
   pause). Snapshots without `startedAt` keep their stored order.
 - Session manager (`manage` skill): `manage -Enable` writes a fresh snapshot
   (`"managed": true`) and the flag file `<data>/tracking`; `hooks/hooks.json`
-  runs `hooks/track.sh` on `SessionStart` (async) and `SessionEnd`. The script
-  checks the flag file in sh first (cheap no-op when off), picks the script
-  with `uname` (hooks run in Git Bash on Windows), and discards output — a
+  runs `. "${CLAUDE_PLUGIN_ROOT}/hooks/track.cmd"` on `SessionStart` (async) and
+  `SessionEnd`. Hooks run in sh (Linux, macOS), Git Bash (Windows) or, on
+  Windows without Git Bash, PowerShell — so `track.cmd` is an sh/batch
+  polyglot: sh sources it and runs the `:;` lines (`:` is a no-op) up to
+  `exit`; PowerShell's `.` hands it to cmd.exe, which skips `:` lines as labels
+  and runs the batch part. Every sh line must start with `:;` and the batch part
+  must stay after the sh `exit`. Both check the flag file first (cheap no-op
+  when off), pick the script (sh: by `uname`), and discard output — a
   `SessionStart` hook's stdout would otherwise be added to the session's context.
-  Keep the logic in `track.sh`, not in `hooks.json`: the plugin directory
-  blocks hook commands with anything but `${CLAUDE_PLUGIN_ROOT}` paths
-  (variables, `$(…)`, `case`) when the plugin is a repo subfolder.
+  Works with LF and CRLF endings (Git for Windows checks out CRLF). Keep the
+  logic in `track.cmd`, not in `hooks.json`: the plugin directory blocks hook
+  commands with anything but `${CLAUDE_PLUGIN_ROOT}` paths (variables, `$(…)`,
+  `case`) when the plugin is a repo subfolder.
   `track` reads the hook JSON on stdin and uses `$CLAUDE_PID` to find the
   session's registry file (shell/terminal, start time, `entrypoint`). Rules:
   start/resume/clear/compact → upsert (keep the original `startedAt`, un-settle
