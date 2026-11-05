@@ -1,6 +1,6 @@
 ---
 name: manage
-description: Session manager — keep the saved list of Claude Code sessions up to date automatically instead of saving by hand — once turned on, every new or resumed session is added (with its folder, shell and terminal) and sessions exited on purpose are dropped, so a sudden close, crash or reboot never loses track of them; reopen them later with the `restore` skill. Also turns this off again and reports its status. Use when the user says "manage sessions", "session manager", "start the session manager", "track my sessions automatically", "auto-save my sessions", "stop managing sessions", "turn off the session manager", "are my sessions being managed?". Windows, Linux and macOS.
+description: Session manager — keep the saved list of Claude Code sessions up to date automatically instead of saving by hand — once turned on, every new or resumed session is added (with its folder, shell and terminal) and sessions exited on purpose are dropped, so a sudden close, crash or reboot never loses track of them; reopen them later with the `restore` skill. Also turns this off again and reports its status. Use when the user says "manage sessions", "session manager", "start the session manager", "track my sessions automatically", "auto-save my sessions", "manage sessions from scratch", "stop managing sessions", "turn off the session manager", "are my sessions being managed?". Windows, Linux and macOS.
 ---
 
 # Sessions — Manage
@@ -73,17 +73,32 @@ Result: `sessions[]` (the open interactive sessions: `sessionId`, `title`,
   `Replace them` / `Cancel`. On Cancel, change nothing, suggest restoring them
   first (the `restore` skill), and stop. On Replace, add `-Force` in Step 3.
 
-### Step 2 — Which open sessions to start with
+### Step 2 — What to start with
 
-The hooks only see sessions that start or resume from now on, so ask which of
-the sessions open right now should be on the list from the start. Build the
-options exactly as the `save` skill does (label = title, with ` (this
-session)` for `isCurrent`; description = folder · shell[ in terminal] · last
-prompt), split across `multiSelect` questions of up to 4 options, header
-`Start with`, e.g. "Which of your open sessions should the session manager
-start with?". For more than 16, use a numbered list. Free-text answers like
-"all" or "none" are fine. If no sessions are open (`sessions[]` empty), skip
-the question and start with an empty list.
+The hooks only see sessions that start or resume from now on, so ask what the
+list should start with. If no sessions are open (`sessions[]` empty), skip this
+and start empty. If the user already said ("manage sessions from scratch",
+"start the session manager with all my sessions"), skip the question and do
+that.
+
+Otherwise ask one single-select question (header `Start with`), e.g. "What
+should the session manager start with? You have N sessions open.":
+
+- `All open sessions` — description: the open sessions' titles, shortened;
+- `Pick sessions` — description: "Choose which of the open sessions to keep";
+- `None (fresh start)` — description: "Start with an empty list; only sessions
+  started or resumed from now on are added (this one too, once you resume it)".
+
+Then:
+- **All open sessions** → every `sessionId` from Step 1.
+- **Pick sessions** → ask which, building the options exactly as the `save`
+  skill does (label = title, with ` (this session)` for `isCurrent`;
+  description = folder · shell[ in terminal] · last prompt), split across
+  `multiSelect` questions of up to 4 options, header `Start with`, e.g. "Which
+  of your open sessions should the session manager start with?". For more than
+  16, use a numbered list. Free-text answers like "all" or "none" are fine; if
+  nothing is picked, start empty.
+- **None (fresh start)** → no ids: the list starts empty.
 
 ### Step 3 — Turn it on
 
@@ -91,12 +106,14 @@ the question and start with an empty list.
 ... manage -DataDir "${CLAUDE_PLUGIN_DATA}" -Enable [-Ids <id1>,<id2>,...] [-Force]
 ```
 
-Leave out `-Ids` when they picked none. Result: `managing: true`, `saved[]`,
-`missing[]`, `replaced`.
+Leave out `-Ids` for a fresh start (or when nothing was picked). Result:
+`managing: true`, `saved[]`, `missing[]`, `replaced`.
 
 Report in plain text, briefly:
 - that the session manager is on, and which sessions it starts with
-  (`title — folder`), or that it starts empty;
+  (`title — folder`), or — for a fresh start — that the list starts empty and
+  only sessions started or resumed from now on will be added (the sessions
+  already open, this one included, are added the next time they're resumed);
 - that from now on new and resumed sessions are added automatically, sessions
   closed with `/exit` are dropped, and anything cut off by a crash, a closed
   window or a reboot stays on the list — to get them back, ask to **restore my

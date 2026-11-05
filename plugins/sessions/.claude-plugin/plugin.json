@@ -1,7 +1,7 @@
 {
   "name": "sessions",
   "description": "Save your open Claude Code terminal sessions and reopen them later (after a reboot, a terminal update, or the next day): each resumed in its original folder and terminal. Windows, Linux and macOS.",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "license": "MIT",
   "repository": "https://github.com/vslipchenko/ai/tree/main/plugins/sessions",
   "keywords": [

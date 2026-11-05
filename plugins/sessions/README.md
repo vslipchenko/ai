@@ -52,8 +52,9 @@ API one"*, *"restore them in cmd this time"*, *"restore them in tmux"*,
 ## Session manager
 
 Instead of saving by hand, say *"manage sessions"* (or *"session manager"*). It
-asks which of your open sessions to start with, then keeps the list current on
-its own:
+asks what to start with — **all open sessions**, **some you pick**, or **none**
+for a fresh start where only sessions started or resumed from then on are
+added — then keeps the list current on its own:
 
 | What happens to a session | On the list? |
 |---|---|
