@@ -49,6 +49,12 @@ GUID_RX = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 # inherits them thinks it is a child of the session running `restore` and turns
 # transcript saving off.
 MARKER_RX = re.compile(r'^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|AI_AGENT|CLAUDE_CODE_(CHILD_SESSION|SESSION_.+|SESSION|MESSAGING_.+|ENTRYPOINT|EXECPATH|SSE_PORT|IDE_.+))$')
+# Colour switches Claude Code may set for its tool shells (NO_COLOR=1 makes restored sessions
+# colourless) and variables describing the terminal `restore` runs in: each new terminal
+# describes itself. (TMUX is kept for the tmux command itself, see cmd_restore.)
+TERMINAL_RX = re.compile(r'^(NO_COLOR|FORCE_COLOR|TERM|TERM_PROGRAM|TERM_PROGRAM_VERSION|TERM_SESSION_ID|COLORTERM|WT_SESSION|'
+                         r'WT_PROFILE_ID|ITERM_SESSION_ID|KITTY_WINDOW_ID|WEZTERM_PANE|ALACRITTY_WINDOW_ID|ALACRITTY_SOCKET|'
+                         r'VTE_VERSION|KONSOLE_[A-Z_]+|GNOME_TERMINAL_[A-Z_]+|TILIX_ID|TERMINATOR_[A-Z_]+|TMUX|TMUX_PANE)$')
 
 TYPE_RX = re.compile(r'"type":\s*"(custom-title|ai-title|last-prompt)"')
 TYPE_KEYS = {'custom-title': 'customTitle', 'ai-title': 'aiTitle', 'last-prompt': 'lastPrompt'}
@@ -1078,9 +1084,19 @@ def build_spec(target, sid, cwd, title, claude, avail):
 
 
 def clean_env():
-    env = {k: v for k, v in os.environ.items() if not MARKER_RX.match(k)}
-    removed = sorted(k for k in os.environ if MARKER_RX.match(k))
+    drop = lambda k: MARKER_RX.match(k) or TERMINAL_RX.match(k)
+    env = {k: v for k, v in os.environ.items() if not drop(k)}
+    removed = sorted(k for k in os.environ if drop(k))
     return env, removed
+
+
+def tmux_env(env):
+    """For the tmux command itself: keep TMUX, so it reaches the server `restore` runs in."""
+    out = dict(env or os.environ)
+    for k in ('TMUX', 'TMUX_PANE'):
+        if k in os.environ:
+            out[k] = os.environ[k]
+    return out
 
 
 def spawn(argv, cwd, env):
@@ -1241,14 +1257,15 @@ def cmd_restore(c):
             if spec['tmux']:
                 tm = avail['terms']['tmux']
                 t = spec['tmux']
-                if tmux_has_session(tm, t['session'], env):
+                tenv = tmux_env(env)
+                if tmux_has_session(tm, t['session'], tenv):
                     argv = [tm, 'new-window', '-t', '=' + t['session'] + ':', '-c', r['cwd'], '-n', t['window'], t['shell']]
                 else:
                     argv = [tm, 'new-session', '-d', '-s', t['session'], '-c', r['cwd'], '-n', t['window'], t['shell']]
                 # tmux returns at once (the window runs on its server), so its errors can be caught,
                 # e.g. a server that can't start because its socket path is too long (macOS: 104 chars).
                 try:
-                    res = subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                    res = subprocess.run(argv, env=tenv, stdin=subprocess.DEVNULL, capture_output=True, text=True,
                                          timeout=30)
                     if res.returncode != 0:
                         failed[r['sessionId']] = {'reason': 'launch-failed',

@@ -57,7 +57,12 @@
 - `restore` runs inside a Claude session, whose tool shells carry session
   markers (`CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_SESSION_ID`, messaging
   socket/token, `CLAUDECODE`, ...). Both scripts must drop them before any
-  launch, or resumed sessions turn transcript saving off. The launch tests
+  launch, or resumed sessions turn transcript saving off. Same for colour
+  switches (the PowerShell tool shell has `NO_COLOR=1` — restored sessions came
+  out colourless) and the old terminal's identity (`TERM`, `TERM_PROGRAM`,
+  `COLORTERM`, `WT_SESSION`, `ITERM_SESSION_ID`, …; `TMUX` is kept only for the
+  tmux command itself). The launch tests set sentinel values and check none
+  reach the launched process. The launch tests
   assert no marker reaches the launched process.
 - Restore must always fall back (another shell / terminal) rather than skip a
   session; only "nothing usable at all" skips (`no-shell` / `no-terminal`).

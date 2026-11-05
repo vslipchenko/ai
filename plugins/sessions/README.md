@@ -156,7 +156,9 @@ and can be cleared any time.
 - **Clean start.** Restored sessions are fully independent: the markers Claude
   Code gives to processes started from inside a session (child-session flag,
   session id, messaging socket) are removed before launching, so each resumed
-  session keeps saving its own transcript.
+  session keeps saving its own transcript. So are the "no colour" switch Claude
+  sets for its tool commands and the description of the terminal `restore` ran
+  in, so each session comes back in full colour and sees its own terminal.
 - **Restoring.** Sessions reopen in the order you originally opened them
   (Windows Terminal tabs left to right, windows one after another). Sessions
   that are already open are skipped, as are sessions whose folder or

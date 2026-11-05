@@ -888,7 +888,12 @@ function Set-WindowLaunch($spec, [string]$exe, [string]$argLine) {
 # running `restore` and turn transcript saving off, so drop them before launching.
 # Variables the user set at User/Machine level are kept.
 function Clear-ClaudeSessionEnv {
-    $rx = '^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|AI_AGENT|CLAUDE_CODE_(CHILD_SESSION|SESSION_.+|SESSION|MESSAGING_.+|ENTRYPOINT|EXECPATH|SSE_PORT|IDE_.+))$'
+    # Also: colour switches Claude Code sets for its tool shells (NO_COLOR=1 makes restored
+    # sessions colourless), and variables describing the terminal `restore` runs in (TERM,
+    # TERM_PROGRAM, WT_SESSION, ...): each new terminal describes itself.
+    $rx = '^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|AI_AGENT|CLAUDE_CODE_(CHILD_SESSION|SESSION_.+|SESSION|MESSAGING_.+|ENTRYPOINT|EXECPATH|SSE_PORT|IDE_.+)' +
+        '|NO_COLOR|FORCE_COLOR|TERM|TERM_PROGRAM|TERM_PROGRAM_VERSION|TERM_SESSION_ID|COLORTERM|WT_SESSION|WT_PROFILE_ID' +
+        '|ITERM_SESSION_ID|KITTY_WINDOW_ID|WEZTERM_PANE|ALACRITTY_WINDOW_ID|ALACRITTY_SOCKET|VTE_VERSION|TMUX|TMUX_PANE)$'
     $removed = @()
     foreach ($item in @(Get-ChildItem Env:)) {
         if ($item.Name -notmatch $rx) { continue }

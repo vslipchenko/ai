@@ -458,6 +458,12 @@ class FakeClaude {
     var leaked = new List<string>();
     foreach (string v in new[] { "CLAUDE_CODE_CHILD_SESSION", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET" })
       if (Environment.GetEnvironmentVariable(v) != null) leaked.Add(v);
+    // Colour switches / old-terminal variables: a leak only if the test's sentinel value got through
+    // (a new terminal may set its own TERM or WT_SESSION, which is fine).
+    foreach (string v in new[] { "NO_COLOR", "FORCE_COLOR", "TERM", "TERM_PROGRAM", "COLORTERM", "WT_SESSION" }) {
+      string val = Environment.GetEnvironmentVariable(v);
+      if (val != null && val.StartsWith("leak")) leaked.Add(v);
+    }
     File.AppendAllText(@"$marker", Directory.GetCurrentDirectory() + "|" + string.Join(" ", args) + "|" + string.Join(",", leaked) + "\n");
     var shells = new List<int>();
     int pid = System.Diagnostics.Process.GetCurrentProcess().Id;
@@ -488,6 +494,9 @@ class FakeClaude {
         # What a Claude Code tool shell passes down; none of it may reach a restored session.
         $env:CLAUDE_CODE_CHILD_SESSION = '1'; $env:CLAUDECODE = '1'
         $env:CLAUDE_CODE_SESSION_ID = 'parent'; $env:CLAUDE_CODE_MESSAGING_SOCKET = 'pipe'
+        # ...and what Claude's PowerShell tool shell has: NO_COLOR=1 plus the old terminal's identity.
+        $env:NO_COLOR = 'leak'; $env:FORCE_COLOR = 'leak0'; $env:TERM = 'leak-term'; $env:TERM_PROGRAM = 'leak-term'
+        $env:COLORTERM = 'leak'; $env:WT_SESSION = 'leak-session'
         foreach ($c in $cases) {
             if (Test-Path $marker) { Remove-Item $marker }
             $null = Run @('restore', '-ClaudeHome', $home1, '-DataDir', $data, '-ClaudeExe', $fake,

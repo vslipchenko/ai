@@ -769,8 +769,12 @@ class SessionsTests(unittest.TestCase):
         fake = os.path.join(fake_dir, 'claude')
         # Records "<cwd>|<args>|<leaked markers>", then ends the shell that started it so the
         # window closes (a Windows Terminal tab may stay open showing the exit code).
+        # Colour switches / old-terminal variables only count as leaked if they still hold the test's
+        # sentinel value: a new terminal may set its own TERM, which is right.
         write(fake, '#!/bin/sh\nleak=""\nfor v in CLAUDE_CODE_CHILD_SESSION CLAUDECODE CLAUDE_CODE_SESSION_ID; do\n'
                     '  eval "[ -n \\"\\${$v+x}\\" ]" && leak="$leak$v,"\ndone\n'
+                    'for v in NO_COLOR FORCE_COLOR TERM TERM_PROGRAM COLORTERM WT_SESSION; do\n'
+                    '  eval "val=\\"\\${$v}\\""; case "$val" in leak*) leak="$leak$v," ;; esac\ndone\n'
                     'printf "%%s|%%s|%%s\\n" "$PWD" "$*" "$leak" >> %s\nkill -9 $PPID\n' % ("'" + marker + "'"))
         os.chmod(fake, 0o755)
         data = os.path.join(e.root, 'launch-data')
@@ -780,7 +784,8 @@ class SessionsTests(unittest.TestCase):
         tmux_dir = tempfile.mkdtemp(prefix='st-', dir='/tmp')
         self.addCleanup(shutil.rmtree, tmux_dir, True)
         env = dict(os.environ, CLAUDE_CODE_CHILD_SESSION='1', CLAUDECODE='1', CLAUDE_CODE_SESSION_ID='parent',
-                   TMUX_TMPDIR=tmux_dir)
+                   TMUX_TMPDIR=tmux_dir, NO_COLOR='leak', FORCE_COLOR='leak0', TERM='leak-term',
+                   TERM_PROGRAM='leak-term', COLORTERM='leak', WT_SESSION='leak-session')
         if IS_MAC:
             apps = {'terminal': 'Terminal', 'iterm2': 'iTerm', 'ghostty': 'Ghostty', 'kitty': 'kitty',
                     'wezterm': 'WezTerm', 'alacritty': 'Alacritty'}
