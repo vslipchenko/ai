@@ -23,10 +23,13 @@
   pause). Snapshots without `startedAt` keep their stored order.
 - Session manager (`manage` skill): `manage -Enable` writes a fresh snapshot
   (`"managed": true`) and the flag file `<data>/tracking`; `hooks/hooks.json`
-  runs `track` on `SessionStart` (async) and `SessionEnd`. The hook command
-  checks the flag file in bash first (cheap no-op when off), picks the script
+  runs `hooks/track.sh` on `SessionStart` (async) and `SessionEnd`. The script
+  checks the flag file in sh first (cheap no-op when off), picks the script
   with `uname` (hooks run in Git Bash on Windows), and discards output — a
   `SessionStart` hook's stdout would otherwise be added to the session's context.
+  Keep the logic in `track.sh`, not in `hooks.json`: the plugin directory
+  blocks hook commands with anything but `${CLAUDE_PLUGIN_ROOT}` paths
+  (variables, `$(…)`, `case`) when the plugin is a repo subfolder.
   `track` reads the hook JSON on stdin and uses `$CLAUDE_PID` to find the
   session's registry file (shell/terminal, start time, `entrypoint`). Rules:
   start/resume/clear/compact → upsert (keep the original `startedAt`, un-settle
