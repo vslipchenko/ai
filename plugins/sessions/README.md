@@ -138,8 +138,10 @@ and can be cleared any time.
 - **Finding live sessions.** Claude Code keeps a small file per running session
   in `~/.claude/sessions/`. The plugin reads it and checks each entry against
   the actual process (PID and start time), so leftovers from crashed sessions
-  and reused PIDs are ignored. Background/SDK sessions are hidden unless you
-  ask for them. If that folder is ever missing or its format changes, it falls
+  and reused PIDs are ignored. Only terminal sessions are offered: sessions of
+  Claude Desktop (and Cowork), the VS Code extension panel, headless runs
+  (`claude -p`, the SDK) and other apps belong to those apps and are left out
+  (Claude Code running in a VS Code terminal is a terminal session and is kept). If that folder is ever missing or its format changes, it falls
   back to transcripts written in the last 12 hours.
 - **Labels.** Each session is shown by its title (your `/rename` title, else
   Claude's generated one), folder, and last prompt.

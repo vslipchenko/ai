@@ -249,14 +249,28 @@ function New-SessionEntry([string]$sessionId, [string]$cwd, [string]$registryNam
 
 # ---------------------------------------------------------------- discovery
 
-# A session someone works in at a terminal. Headless runs (`claude -p`, the SDK) report
-# kind "interactive" too, but their entrypoint is "sdk-…".
+# A session someone works in at a terminal: entrypoint "cli" (or none, in older files).
+# Everything else belongs to another app and can't be reopened with `claude --resume` in a
+# terminal — Claude Desktop ("claude-desktop", Cowork "local-agent"), the VS Code
+# extension panel ("claude-vscode"), headless runs ("sdk-…", which report kind
+# "interactive" too), remote and integration sessions.
 function Test-InteractiveEntry($o) {
     $kind = [string](Get-Prop $o 'kind')
     $entry = [string](Get-Prop $o 'entrypoint')
     if ($kind -and $kind -ne 'interactive') { return $false }
-    if ($entry -like 'sdk*') { return $false }
+    if ($entry -and $entry -ne 'cli') { return $false }
     return $true
+}
+
+# Which app a non-terminal session belongs to, for "N sessions from … left out".
+function Get-EntrySource($o) {
+    $entry = [string](Get-Prop $o 'entrypoint')
+    if ($entry -in @('claude-desktop', 'claude-desktop-3p', 'remote_desktop')) { return 'Claude Desktop' }
+    if ($entry -in @('local-agent', 'local_agent', 'remote_cowork')) { return 'Cowork (Claude Desktop)' }
+    if ($entry -eq 'claude-vscode') { return 'VS Code extension' }
+    if ($entry -like 'sdk*') { return 'headless / SDK' }
+    if ($entry) { return "other ($entry)" }
+    return 'background'
 }
 
 function Test-ProcessLive($procId, $procStart) {
@@ -334,6 +348,7 @@ function Get-LiveSessions([bool]$includeNonInteractive) {
     $sessions = New-Object System.Collections.ArrayList
     $seen = @{}
     $hidden = 0
+    $hiddenFrom = [ordered]@{}
     $usable = 0
     $regDir = Join-Path $ClaudeHome 'sessions'
 
@@ -347,7 +362,12 @@ function Get-LiveSessions([bool]$includeNonInteractive) {
             $usable++
             if (-not (Test-ProcessLive $procId (Get-Prop $o 'procStart'))) { continue }
             $kind = Get-Prop $o 'kind'
-            if (-not (Test-InteractiveEntry $o) -and -not $includeNonInteractive) { $hidden++; continue }
+            if (-not (Test-InteractiveEntry $o) -and -not $includeNonInteractive) {
+                $hidden++
+                $src = Get-EntrySource $o
+                if ($hiddenFrom.Contains($src)) { $hiddenFrom[$src]++ } else { $hiddenFrom[$src] = 1 }
+                continue
+            }
             $sid = $sid.ToLowerInvariant()
             if ($seen.ContainsKey($sid)) { continue }
             $seen[$sid] = $true
@@ -385,7 +405,7 @@ function Get-LiveSessions([bool]$includeNonInteractive) {
 
     # In the order they were opened (oldest first), like the user's tabs and windows.
     $sorted = Sort-ByOpened @($sessions) { param($s) if ($s.Contains('startedAt')) { $s.startedAt } else { $s.lastActive } }
-    return [ordered]@{ source = $source; sessions = $sorted; hiddenNonInteractive = $hidden }
+    return [ordered]@{ source = $source; sessions = $sorted; hiddenNonInteractive = $hidden; hiddenFrom = $hiddenFrom }
 }
 
 # Stable sort, oldest first, by an ISO-8601 time; entries without one keep their
@@ -479,6 +499,7 @@ function Invoke-List {
             source               = $r.source
             sessions             = $r.sessions
             hiddenNonInteractive = $r.hiddenNonInteractive
+            hiddenFrom           = $r.hiddenFrom
             pendingSnapshot      = Get-PendingSnapshot $data
             managing             = (Test-Tracking $data)
         })

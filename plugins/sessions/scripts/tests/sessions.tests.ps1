@@ -253,8 +253,20 @@ try {
     $start = { param($sid, $src) '{"session_id":"' + $sid + '","cwd":"' + ($projA -replace '\\', '\\') + '","hook_event_name":"SessionStart","source":"' + $src + '"}' }
     $end = { param($sid, $why) '{"session_id":"' + $sid + '","hook_event_name":"SessionEnd","reason":"' + $why + '"}' }
 
+    # Sessions of other apps on a live process (the helper): Claude Desktop and the VS Code extension.
+    foreach ($x in @(@{ file = 'desk'; sid = $C; entry = 'claude-desktop' }, @{ file = 'vsc'; sid = $D; entry = 'claude-vscode' })) {
+        $o = [ordered]@{ pid = $helper.Id; sessionId = $x.sid; cwd = $projA; startedAt = 1793722090000; procStart = (Get-Process -Id $helper.Id).StartTime.ToFileTimeUtc().ToString(); kind = 'interactive'; entrypoint = $x.entry; name = $x.file }
+        Write-Utf8 (Join-Path $homeTr "sessions\$($x.file).json") (ConvertTo-Json $o)
+    }
     $r = Run @('list', '-ClaudeHome', $homeTr)
-    Assert (@($r.sessions | ForEach-Object { $_.sessionId }) -join ',' -eq $A -and $r.hiddenNonInteractive -eq 1) 'headless (sdk) session is not offered as interactive'
+    Assert ((@($r.sessions | ForEach-Object { $_.sessionId }) -join ',') -eq $A -and $r.hiddenNonInteractive -eq 3) 'only terminal (cli) sessions offered: headless, Claude Desktop, VS Code extension left out'
+    Assert ($r.hiddenFrom.'Claude Desktop' -eq 1 -and $r.hiddenFrom.'VS Code extension' -eq 1 -and $r.hiddenFrom.'headless / SDK' -eq 1) 'left-out sessions counted per app'
+    # An older session file without an entrypoint field still counts as a terminal session.
+    $homeOld = Join-Path $root 'claude-old'
+    $o = [ordered]@{ pid = $helper.Id; sessionId = $C; cwd = $projA; startedAt = 1793722090000; procStart = (Get-Process -Id $helper.Id).StartTime.ToFileTimeUtc().ToString(); kind = 'interactive' }
+    Write-Utf8 (Join-Path $homeOld "sessions\$($helper.Id).json") (ConvertTo-Json $o)
+    $r = Run @('list', '-ClaudeHome', $homeOld)
+    Assert ((@($r.sessions | ForEach-Object { $_.sessionId }) -join ',') -eq $C) 'session file without entrypoint still listed'
     $r = Track (& $start $E 'startup') $PID
     Assert ($r.ok -and -not $r.tracked -and $r.why -eq 'not-managing') 'track does nothing while not managing'
     $r = Run @('manage', '-ClaudeHome', $homeTr, '-DataDir', $mg)
@@ -278,6 +290,11 @@ try {
     Assert (@($ss | Where-Object { $_.sessionId -eq $E }).Count -eq 1 -and [string]@($ss | Where-Object { $_.sessionId -eq $E })[0].startedAt -eq [string]$firstStart) 'resume updates in place, keeps opening time'
     $r = Track (& $start $G 'startup') ([string]$helper.Id)
     Assert (-not $r.tracked -and $r.why -eq 'non-interactive') 'headless session not tracked'
+    # A hook firing inside Claude Desktop's own Claude Code.
+    $o = [ordered]@{ pid = 999990; sessionId = $G; cwd = $projA; kind = 'interactive'; entrypoint = 'claude-desktop' }
+    Write-Utf8 (Join-Path $homeTr 'sessions\999990.json') (ConvertTo-Json $o)
+    $r = Track (& $start $G 'startup') '999990'
+    Assert (-not $r.tracked -and $r.why -eq 'non-interactive' -and @(Mg-Sessions | Where-Object { $_.sessionId -eq $G }).Count -eq 0) 'Claude Desktop session not tracked'
     $r = Track (& $end $E 'other')
     Assert (-not $r.tracked -and @(Mg-Sessions | Where-Object { $_.sessionId -eq $E }).Count -eq 1) 'closed window / reboot keeps the session'
     $r = Track (& $end $E 'prompt_input_exit')

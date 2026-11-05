@@ -31,8 +31,13 @@
   session's registry file (shell/terminal, start time, `entrypoint`). Rules:
   start/resume/clear/compact → upsert (keep the original `startedAt`, un-settle
   it); end with `prompt_input_exit` / `logout` / `clear` / `resume` → remove;
-  `other` (window closed, killed, reboot) → keep. Headless sessions report
-  `kind: interactive` but `entrypoint: sdk-*` — never listed or tracked.
+  `other` (window closed, killed, reboot) → keep. Only `entrypoint: "cli"` (or
+  none, in older files) is a terminal session; every other entrypoint — Claude
+  Desktop `claude-desktop` / `claude-desktop-3p`, Cowork `local-agent`, the VS
+  Code extension `claude-vscode`, headless `sdk-*` (which report
+  `kind: interactive` too), `remote_*`, … — is never listed or tracked. An
+  allowlist, so new apps don't leak in. `hiddenFrom` counts the left-out ones
+  per app (`Get-EntrySource` / `entry_source`).
   `save` is refused while managing (`error: managing`).
 - All snapshot read-modify-writes (track, save, clear, manage, restore's marking)
   go through the snapshot lock (`snapshot.lock`; O_EXCL file on Windows with a

@@ -437,9 +437,20 @@ class SessionsTests(unittest.TestCase):
             with open(os.path.join(snaps, f[0])) as fh:
                 return json.load(fh)['sessions']
 
+        # Sessions of other apps on a live process: Claude Desktop and the VS Code extension.
+        for fname, sid, entry in (('desk', C, 'claude-desktop'), ('vsc', D, 'claude-vscode')):
+            write(os.path.join(home, 'sessions', fname + '.json'), json.dumps(
+                {'pid': p_sdk.pid, 'sessionId': sid, 'cwd': e.proj, 'startedAt': 1793722090000,
+                 'procStart': stat_start(p_sdk.pid), 'kind': 'interactive', 'entrypoint': entry, 'name': fname}))
         r = run('list', '-ClaudeHome', home)
-        self.assertEqual(([s['sessionId'] for s in r['sessions']], r['hiddenNonInteractive']), ([A], 1),
-                         'headless (sdk) session is not offered as interactive')
+        self.assertEqual(([s['sessionId'] for s in r['sessions']], r['hiddenNonInteractive']), ([A], 3),
+                         'only terminal (cli) sessions offered: headless, Claude Desktop, VS Code extension left out')
+        self.assertEqual(r['hiddenFrom'], {'headless / SDK': 1, 'Claude Desktop': 1, 'VS Code extension': 1})
+        # An older session file without an entrypoint field still counts as a terminal session.
+        home_old = os.path.join(e.root, 'claude-old')
+        write(os.path.join(home_old, 'sessions', '%d.json' % p_sdk.pid), json.dumps(
+            {'pid': p_sdk.pid, 'sessionId': C, 'cwd': e.proj, 'procStart': stat_start(p_sdk.pid), 'kind': 'interactive'}))
+        self.assertEqual([s['sessionId'] for s in run('list', '-ClaudeHome', home_old)['sessions']], [C])
         r = track(start(E, 'startup'), p_cli.pid)
         self.assertEqual((r['tracked'], r['why']), (False, 'not-managing'))
         self.assertFalse(run('manage', '-ClaudeHome', home, '-DataDir', mg)['managing'])
@@ -459,6 +470,12 @@ class SessionsTests(unittest.TestCase):
         self.assertEqual((len(es), es[0]['startedAt']), (1, first), 'resume updates in place, keeps opening time')
         r = track(start(G, 'startup'), p_sdk.pid)
         self.assertEqual((r['tracked'], r['why']), (False, 'non-interactive'))
+        # A hook firing inside Claude Desktop's own Claude Code.
+        write(os.path.join(home, 'sessions', '999990.json'), json.dumps(
+            {'pid': 999990, 'sessionId': G, 'cwd': e.proj, 'kind': 'interactive', 'entrypoint': 'claude-desktop'}))
+        r = track(start(G, 'startup'), 999990)
+        self.assertEqual((r['tracked'], r['why']), (False, 'non-interactive'))
+        self.assertNotIn(G, [s['sessionId'] for s in sessions()], 'Claude Desktop session not tracked')
         r = track(end(E, 'other'))
         self.assertFalse(r['tracked'])
         self.assertIn(E, [s['sessionId'] for s in sessions()], 'closed window / reboot keeps it')

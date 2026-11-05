@@ -458,6 +458,7 @@ class Ctx:
     def live_sessions(self, include_non_interactive):
         sessions, seen = [], set()
         hidden = usable = 0
+        hidden_from = {}
         reg = os.path.join(self.home, 'sessions')
         if os.path.isdir(reg):
             for f in sorted(glob.glob(os.path.join(glob.escape(reg), '*.json'))):
@@ -477,6 +478,8 @@ class Ctx:
                 kind = o.get('kind')
                 if not is_interactive_entry(o) and not include_non_interactive:
                     hidden += 1
+                    src = entry_source(o)
+                    hidden_from[src] = hidden_from.get(src, 0) + 1
                     continue
                 sid = sid.lower()
                 if sid in seen:
@@ -515,7 +518,7 @@ class Ctx:
                     sessions.append(e)
         # In the order they were opened (oldest first), like the user's tabs and windows.
         sessions = sort_by_opened(sessions, lambda e: e.get('startedAt') or e.get('lastActive'))
-        return {'source': source, 'sessions': sessions, 'hiddenNonInteractive': hidden}
+        return {'source': source, 'sessions': sessions, 'hiddenNonInteractive': hidden, 'hiddenFrom': hidden_from}
 
     # -- snapshots
     @staticmethod
@@ -555,11 +558,28 @@ class Ctx:
 # ---------------------------------------------------------------- commands
 
 def is_interactive_entry(o):
-    """A session someone works in at a terminal. Headless runs (`claude -p`, the SDK)
-    report kind "interactive" too, but their entrypoint is "sdk-..."."""
+    """A session someone works in at a terminal: entrypoint "cli" (or none, in older files).
+    Everything else belongs to another app and can't be reopened with `claude --resume` in a
+    terminal: Claude Desktop ("claude-desktop", Cowork "local-agent"), the VS Code extension
+    panel ("claude-vscode"), headless runs ("sdk-...", which report kind "interactive" too),
+    remote and integration sessions."""
     kind = str(o.get('kind') or '')
     entry = str(o.get('entrypoint') or '')
-    return not (kind and kind != 'interactive') and not entry.startswith('sdk')
+    return not (kind and kind != 'interactive') and entry in ('', 'cli')
+
+
+def entry_source(o):
+    """Which app a non-terminal session belongs to, for "N sessions from ... left out"."""
+    entry = str(o.get('entrypoint') or '')
+    if entry in ('claude-desktop', 'claude-desktop-3p', 'remote_desktop'):
+        return 'Claude Desktop'
+    if entry in ('local-agent', 'local_agent', 'remote_cowork'):
+        return 'Cowork (Claude Desktop)'
+    if entry == 'claude-vscode':
+        return 'VS Code extension'
+    if entry.startswith('sdk'):
+        return 'headless / SDK'
+    return 'other (%s)' % entry if entry else 'background'
 
 
 def tracking_on(data):
@@ -649,7 +669,8 @@ def cmd_list(c):
     r = c.live_sessions(c.a.IncludeNonInteractive)
     data = c.data_dir()
     write_result({'ok': True, 'source': r['source'], 'sessions': r['sessions'],
-                  'hiddenNonInteractive': r['hiddenNonInteractive'], 'pendingSnapshot': c.pending_snapshot(data),
+                  'hiddenNonInteractive': r['hiddenNonInteractive'], 'hiddenFrom': r['hiddenFrom'],
+                  'pendingSnapshot': c.pending_snapshot(data),
                   'managing': tracking_on(data)})
 
 

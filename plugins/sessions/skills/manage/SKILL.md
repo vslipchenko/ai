@@ -122,5 +122,7 @@ with **restore my sessions** or deleted with **clear my sessions**.
 - While managing is on, a manual `save` is refused (`error: managing`); the
   `save` skill offers to turn managing off first.
 - `clear` empties the list but managing keeps running.
-- Headless runs (`claude -p`, scripts using the SDK) are never added.
+- Only terminal sessions are added: sessions of Claude Desktop (and Cowork), the
+  VS Code extension panel, headless runs (`claude -p`, the SDK) and other apps
+  never are, even though the hooks also run there.
 - On Windows the hooks run through Git Bash, which Claude Code uses on Windows.

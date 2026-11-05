@@ -41,7 +41,7 @@ carries `error` and `message` — report the message and stop.
 
 Result: `sessions[]` with `sessionId`, `cwd`, `title`, `lastPrompt`,
 `isCurrent`, `shell` and `host`, plus `source`,
-`hiddenNonInteractive`, `pendingSnapshot` and `managing`. `shell` and `host` are stored
+`hiddenNonInteractive`, `hiddenFrom`, `pendingSnapshot` and `managing`. `shell` and `host` are stored
 with the snapshot so `restore` reopens each session in the same kind of
 terminal:
 - Windows — `shell`: `gitbash` / `pwsh` / `powershell` / `cmd`; `host`: `wt` /
@@ -76,8 +76,12 @@ one still has sessions that were never restored, `pendingSnapshot` describes it
 - No sessions → say so and stop.
 - `source` is `transcripts` → the live-session list was unavailable; tell the
   user these are sessions **active in the last 12 hours**, some possibly closed.
-- `hiddenNonInteractive` > 0 → mention that N background/SDK sessions were left
-  out. Re-run with `-IncludeNonInteractive` only if the user asks for them.
+- `hiddenNonInteractive` > 0 → only terminal sessions are offered; sessions of
+  other apps can't be reopened in a terminal and are left out. Say so in one
+  line using `hiddenFrom` (counts per app, e.g. `{"Claude Desktop": 1,
+  "VS Code extension": 1, "headless / SDK": 2}`), e.g. "Left out 1 Claude
+  Desktop session and 2 headless runs (not terminal sessions)." Re-run with
+  `-IncludeNonInteractive` only if the user explicitly asks for them.
 
 ## Step 2 — Let the user pick
 
