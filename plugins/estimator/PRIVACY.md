@@ -13,7 +13,7 @@ This directory is never read or accessed by anyone other than you.
 
 ## External connections
 
-The plugin reads Jira ticket data through the **Atlassian MCP** — a connection you configure yourself in Claude Code under your own credentials. The plugin author has no access to your Jira instance or the data retrieved from it.
+The plugin reads Jira ticket data through **Atlassian's remote MCP server** (`https://mcp.atlassian.com/v2/mcp`), which the plugin declares and you sign in to yourself under your own Atlassian credentials. Requests go only to Atlassian. The plugin author has no access to your Jira instance or the data retrieved from it.
 
 No analytics, telemetry, or usage data is sent anywhere.
 

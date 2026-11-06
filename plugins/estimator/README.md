@@ -15,8 +15,9 @@ claude plugin marketplace add vslipchenko/ai
 claude plugin install estimator@vslipchenko
 ```
 
-Then restart Claude Code. The plugin needs the **Atlassian (Jira) MCP** connected
-(run `/mcp` to check). Repository: <https://github.com/vslipchenko/ai/tree/main/plugins/estimator>.
+Then restart Claude Code. The plugin brings Atlassian's remote MCP server
+(`https://mcp.atlassian.com/v2/mcp`) with it: run `/mcp` once and sign in to
+Atlassian to connect it. Repository: <https://github.com/vslipchenko/ai/tree/main/plugins/estimator>.
 
 ## Skills & commands at a glance
 
@@ -162,7 +163,8 @@ project.
 
 ## Requirements
 
-- The Atlassian (Jira) MCP connected in Claude Code.
+- An Atlassian (Jira) account. The plugin's Atlassian MCP server needs a
+  one-time sign-in through `/mcp`.
 - For CSV assembly the plugin uses, in order of preference, Python 3, then
   Node.js; if neither is available it falls back to building the CSV directly.
   No third-party packages are required.
