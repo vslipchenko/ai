@@ -25,6 +25,10 @@ claude plugin install sessions@vslipchenko
 Then restart Claude Code.
 
 **Requirements:**
+- **Claude Code in a terminal** (the `claude` CLI). It saves and reopens
+  terminal sessions only: sessions in Claude Desktop, the IDE extensions,
+  claude.ai chat or Cowork are never listed, and the plugin can't do anything
+  when installed there.
 - **Windows** 10/11 with Windows PowerShell 5.1 (built in). Git Bash and Windows
   Terminal are used when installed, never required.
 - **Linux** with Python 3 (preinstalled on almost every desktop distro). Works
