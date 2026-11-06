@@ -39,8 +39,8 @@ versa.
 ## Step 2 — Check for an existing profile
 
 Look for a profile at `~/.naturalize/profile.md` (the user's home
-directory — same external-storage pattern the `estimator` plugin uses for
-`~/.estimator`, keeping personal writing samples out of the skill package
+directory — same external-storage pattern the `jira-estimator` plugin uses for
+`~/.jira-estimator`, keeping personal writing samples out of the skill package
 itself).
 
 - **Found** → read it and skip straight to Step 5.

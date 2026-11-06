@@ -1,7 +1,7 @@
 node_modules/
 __pycache__/
 *.pyc
-.estimator/
+.jira-estimator/
 docs/
 .idea/
 desktop.ini

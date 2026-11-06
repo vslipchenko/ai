@@ -1,0 +1,22 @@
+{
+  "name": "jira-estimator",
+  "displayName": "Jira Estimator",
+  "description": "Estimate Jira tickets from your team's actual history. Pulls resolved tickets via the Atlassian MCP to build a baseline, then suggests effort/story-point estimates by comparing new work to similar past tickets.",
+  "version": "1.2.0",
+  "license": "MIT",
+  "repository": "https://github.com/vslipchenko/ai/tree/main/plugins/jira-estimator",
+  "homepage": "https://vslipchenko.github.io/jira-estimator/",
+  "privacyPolicyUrl": "https://github.com/vslipchenko/ai/blob/main/plugins/jira-estimator/PRIVACY.md",
+  "keywords": [
+    "jira",
+    "estimation",
+    "story-points",
+    "agile",
+    "scrum",
+    "atlassian",
+    "planning"
+  ],
+  "author": {
+    "name": "Vladyslav Slipchenko"
+  }
+}

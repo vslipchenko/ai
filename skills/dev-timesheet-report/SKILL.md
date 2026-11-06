@@ -21,7 +21,7 @@ when this skill loads, ending in `.../skills/dev-timesheet-report`). Scripts are
 at `<SKILL_DIR>/scripts/`, references at `<SKILL_DIR>/references/`.
 
 **Config lives at `~/.dev-timesheet-report/config.json`** — the user's home
-directory, not this repo, matching how `estimator` and `naturalize` store
+directory, not this repo, matching how `jira-estimator` and `naturalize` store
 personal setup. It is written once and reused every run.
 
 This skill is **read-only against every source**. It never writes a worklog,
