@@ -241,4 +241,5 @@ python -I -m unittest discover -s skills/safe-install/scripts/tests -t skills/sa
 ```
 
 CI (`.github/workflows/safe-install.yml`) runs exactly that on Ubuntu, Windows and
-macOS with Python 3.9 and 3.x.
+macOS with Python 3.x, and with Python 3.9 on Windows and macOS (setup-python has no
+3.9 build for Ubuntu 26.04; on macOS 3.9 is the Command Line Tools' `python3`).

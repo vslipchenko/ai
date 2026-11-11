@@ -160,6 +160,13 @@ def walk_error(error):
     raise GateError("Cannot traverse filesystem tree: {}".format(error)) from error
 
 
+def close_http_error(error):
+    # An HTTPError without a body (fp is None) raises KeyError from close() on
+    # Python 3.9; there is nothing to close then anyway.
+    if getattr(error, "fp", None) is not None:
+        error.close()
+
+
 class GithubRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, message, headers, new_url):
         parsed = urllib.parse.urlsplit(new_url)
@@ -353,7 +360,7 @@ class Resolver:
                     repo, urllib.parse.quote("/".join(tail[:length]), safe=""))
                 info = json_load(self.gate.http(address, MAX_DOWNLOAD))
             except urllib.error.HTTPError as exc:
-                exc.close()
+                close_http_error(exc)
                 if exc.code in (404, 422):
                     continue
                 raise
@@ -1032,7 +1039,7 @@ class Gate:
             raise
         except (GateError, urllib.error.URLError) as exc:
             if isinstance(exc, urllib.error.HTTPError):
-                exc.close()
+                close_http_error(exc)
             report["complete"] = False
             report["verdict"] = "block"
             report["reasons"].append(str(exc))

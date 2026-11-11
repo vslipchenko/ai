@@ -427,6 +427,15 @@ class GateTests(unittest.TestCase):
         self.gate.discard(report["digest"])
         self.assertTrue((backups[0] / "old.txt").exists())
 
+    def test_http_errors_without_a_body_are_closed_safely(self):
+        # Python 3.9 raises KeyError from close() on an HTTPError whose fp is None.
+        no_body = mock.Mock(fp=None)
+        si.close_http_error(no_body)
+        no_body.close.assert_not_called()
+        with_body = mock.Mock(fp=io.BytesIO(b""))
+        si.close_http_error(with_body)
+        with_body.close.assert_called_once()
+
     def test_rescan_of_an_undiscarded_snapshot_replaces_it(self):
         source = self.skill()
         first = self.scan(source)

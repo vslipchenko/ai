@@ -27,6 +27,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ['3.9', '3.x']
+        # setup-python has no 3.9 build for ubuntu-latest (Ubuntu 26.04). 3.9 stays
+        # covered on macOS, where it is the Command Line Tools' python3, and Windows.
+        exclude:
+          - os: ubuntu-latest
+            python: '3.9'
     name: ${{ matrix.os }} (Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
