@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["policy", "digest", "complete", "reviewed_files", "summary", "findings"],
+  "properties": {
+    "policy": {"type": "string"},
+    "digest": {"type": "string"},
+    "complete": {"type": "boolean"},
+    "summary": {"type": "string", "maxLength": 4000},
+    "reviewed_files": {"type": "array", "items": {"type": "string"}},
+    "findings": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "name", "description", "file", "line"],
+        "properties": {
+          "severity": {"type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]},
+          "name": {"type": "string", "maxLength": 200},
+          "description": {"type": "string", "maxLength": 2000},
+          "file": {"type": "string"},
+          "line": {"type": "integer", "minimum": 1}
+        }
+      }
+    }
+  }
+}

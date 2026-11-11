@@ -1,0 +1,1 @@
+{"path":"sample.env","parts":[{"text":"sk_live_"},{"repeat":"A1b2C3d4","count":3},{"text":"\nrk_live_"},{"repeat":"E5f6G7h8","count":3},{"text":"\nsk_test_"},{"repeat":"I9j0K1l2","count":3},{"text":"\nrk_test_"},{"repeat":"M3n4O5p6","count":3},{"text":"\nsk_prod_"},{"repeat":"Q7r8S9t0","count":3},{"text":"\nrk_prod_"},{"repeat":"U1v2W3x4","count":3}]}

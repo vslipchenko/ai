@@ -1,0 +1,11 @@
+Plugin: example
+Component inventory
+  Skills (1): example
+  Commands (0)
+  Agents (0)
+  Hooks (2): SessionStart, SessionEnd
+  MCP servers (1): local-helper
+  LSP servers (0)
+  Monitors (0)
+  Bin (0)
+  Dependencies (0)

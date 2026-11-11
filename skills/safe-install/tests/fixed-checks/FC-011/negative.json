@@ -1,0 +1,1 @@
+{"path":"sample.env","parts":[{"text":"xoxp-"},{"repeat":"XXXXXX-","count":3},{"repeat":"X","count":32},{"text":"\nxoxp-"},{"repeat":"1234-","count":3},{"repeat":"A1b2C3d4","count":4},{"text":"\nxoxe-"},{"repeat":"1234567890-","count":3},{"repeat":"E5f6G7h8","count":4},{"text":"tooLong"}]}

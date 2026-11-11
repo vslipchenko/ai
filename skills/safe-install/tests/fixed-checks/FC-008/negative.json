@@ -1,0 +1,1 @@
+{"path":"sample.pem","parts":[{"text":"-----BEGIN "},{"text":"PUBLIC KEY-----\n-----BEGIN "},{"text":"CERTIFICATE-----\n-----END "},{"text":"RSA PRIVATE KEY-----\n-----BEGIN <TYPE> PRIVATE KEY-----"}]}

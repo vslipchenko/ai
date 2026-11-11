@@ -34,6 +34,7 @@ Standalone skills (not tied to a specific plugin) live in `skills/`.
 | [`jira-ticket-history`](skills/jira-ticket-history) | Render one Jira ticket's complete history as a local `git log`-style HTML page — every field change, comment and worklog, click to expand diffs (with a full-text view for descriptions), filters by activity type and a hide-automation switch. Pages through every endpoint so nothing is cut off; works on Cloud or Data Center via an Atlassian MCP or an API token. |
 | [`naturalize`](skills/naturalize) | Rewrite Claude-generated text to match your own writing voice — calibrated once via samples and a togglable checklist of AI writing tells (em-dashes, stock phrases, rare synonyms, ...), then reused automatically. |
 | [`password-generator`](skills/password-generator) | Generate cryptographically secure passwords or diceware-style passphrases via a bundled CSPRNG script, with entropy reported and single values delivered straight to the clipboard instead of being printed. |
+| [`safe-install`](skills/safe-install) | Security-check a skill or plugin before installing it — fixed rules, Claude Code's manifest validator and an isolated AI review — with a report of each issue's severity, name and description. Critical issues block the install, other issues ask Yes/No, a clean result installs automatically; the installed copy is verified against what was reviewed. Needs Python 3.9+. |
 
 ## License
 

@@ -1,0 +1,172 @@
+[
+  {
+    "id": "FC-001",
+    "severity": "high",
+    "name": "Hidden text direction controls",
+    "description": "Hidden direction controls can make instructions or code appear in a different order from the order the computer reads.",
+    "pattern": "[\\u202A-\\u202E\\u2066-\\u2069]",
+    "case_insensitive": false,
+    "redact": false,
+    "source": "Unicode UAX #9 explicit directional formatting characters: https://www.unicode.org/reports/tr9/"
+  },
+  {
+    "id": "FC-002",
+    "severity": "medium",
+    "name": "Invisible text characters",
+    "description": "Invisible characters can conceal or separate instructions without changing how the text looks. They may also be legitimate language formatting.",
+    "pattern": "[\\u00AD\\u200B-\\u200F\\u2060]",
+    "case_insensitive": false,
+    "redact": false,
+    "source": "Unicode Default_Ignorable_Code_Point: https://www.unicode.org/Public/UCD/latest/ucd/DerivedCoreProperties.txt"
+  },
+  {
+    "id": "FC-003",
+    "severity": "medium",
+    "name": "Hidden Unicode tag characters",
+    "description": "Unicode tags can carry text that is not visibly displayed. Review whether they are necessary for the package.",
+    "pattern": "[\\U000E0000-\\U000E007F]",
+    "case_insensitive": false,
+    "redact": false,
+    "source": "Unicode Tags block and default-ignorable characters: https://www.unicode.org/charts/PDF/UE0000.pdf"
+  },
+  {
+    "id": "FC-004",
+    "severity": "medium",
+    "name": "Invisible operators or separators",
+    "description": "Invisible operators or separators can hide boundaries inside instructions. They may also be legitimate mathematical notation.",
+    "pattern": "[\\u2061-\\u2064]",
+    "case_insensitive": false,
+    "redact": false,
+    "source": "Unicode General Punctuation, invisible operators U+2061 through U+2064: https://www.unicode.org/charts/PDF/U2000.pdf"
+  },
+  {
+    "id": "FC-005",
+    "severity": "medium",
+    "name": "Possible committed GitHub access token",
+    "description": "The package contains text shaped like a GitHub personal access token. If real, it can grant access to repositories; the value is redacted.",
+    "pattern": "(?<![A-Za-z0-9_])ghp_(?![xX]{36}(?![A-Za-z0-9]))[A-Za-z0-9]{36}(?![A-Za-z0-9])",
+    "case_insensitive": false,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule github-pat; adapted with token boundaries and an all-X placeholder exclusion: https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/github.go"
+  },
+  {
+    "id": "FC-006",
+    "severity": "medium",
+    "name": "Possible committed GitHub OAuth token",
+    "description": "The package contains text shaped like a GitHub OAuth token. If real, it can expose a connected account; the value is redacted.",
+    "pattern": "(?<![A-Za-z0-9_])gho_(?![xX]{36}(?![A-Za-z0-9]))[A-Za-z0-9]{36}(?![A-Za-z0-9])",
+    "case_insensitive": false,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule github-oauth; adapted with token boundaries and an all-X placeholder exclusion: https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/github.go"
+  },
+  {
+    "id": "FC-007",
+    "severity": "medium",
+    "name": "Possible committed GitHub application token",
+    "description": "The package contains text shaped like a GitHub application token. If real, it can expose an application or its repositories; the value is redacted.",
+    "pattern": "(?<![A-Za-z0-9_])(?:ghu|ghs)_(?![xX]{36}(?![A-Za-z0-9]))[A-Za-z0-9]{36}(?![A-Za-z0-9])",
+    "case_insensitive": false,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule github-app-token; adapted with token boundaries and an all-X placeholder exclusion: https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/github.go"
+  },
+  {
+    "id": "FC-008",
+    "severity": "high",
+    "name": "Possible committed private key",
+    "description": "The package contains a private-key header. If key material follows it, it could enable impersonation or decryption of private data.",
+    "pattern": "-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----",
+    "case_insensitive": true,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule private-key; adapted to detect the header even without a complete key body: https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/privatekey.go"
+  },
+  {
+    "id": "FC-009",
+    "severity": "medium",
+    "name": "Possible committed AWS access key ID",
+    "description": "The package contains an AWS access key identifier. If its matching secret is exposed too, it can grant access to cloud resources; the identifier is redacted.",
+    "pattern": "(?<![A-Za-z0-9_])(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)(?![A-Z2-7]{9}EXAMPLE(?![A-Za-z0-9_]))(?!([A-Z2-7])\\1{15}(?![A-Za-z0-9_]))[A-Z2-7]{16}(?![A-Za-z0-9_])",
+    "case_insensitive": false,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule aws-access-token; adapted with ASCII token boundaries, the upstream EXAMPLE exclusion, and uniform-placeholder rejection instead of an entropy filter: https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/aws.go"
+  },
+  {
+    "id": "FC-010",
+    "severity": "medium",
+    "name": "Possible committed Slack bot token",
+    "description": "The package contains text shaped like a Slack bot token. If real, it can grant access to a workspace through that bot; the value is redacted.",
+    "pattern": "(?<![A-Za-z0-9_-])xoxb-[0-9]{10,13}-[0-9]{10,13}[A-Za-z0-9-]*(?![A-Za-z0-9_-])",
+    "case_insensitive": false,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule slack-bot-token; adapted with ASCII token boundaries (the upstream entropy filter is not applied): https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/slack.go"
+  },
+  {
+    "id": "FC-011",
+    "severity": "medium",
+    "name": "Possible committed Slack user token",
+    "description": "The package contains text shaped like a Slack user token. If real, it can allow someone to act as that user in a workspace; the value is redacted.",
+    "pattern": "(?<![A-Za-z0-9_-])xox[pe](?:-[0-9]{10,13}){3}-[A-Za-z0-9-]{28,34}(?![A-Za-z0-9_-])",
+    "case_insensitive": false,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule slack-user-token; adapted with ASCII token boundaries (the upstream entropy filter is not applied): https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/slack.go"
+  },
+  {
+    "id": "FC-012",
+    "severity": "medium",
+    "name": "Possible committed Slack app token",
+    "description": "The package contains text shaped like a Slack app-level token. If real, it can expose application access to a workspace; the value is redacted.",
+    "pattern": "(?<![A-Za-z0-9_-])xapp-[0-9]-[A-Z0-9]+-[0-9]+-[A-Z0-9]+(?![A-Za-z0-9_-])",
+    "case_insensitive": true,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule slack-app-token; adapted with ASCII digits and token boundaries (the upstream entropy filter is not applied): https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/slack.go"
+  },
+  {
+    "id": "FC-013",
+    "severity": "medium",
+    "name": "Possible committed Anthropic API key",
+    "description": "The package contains text shaped like an Anthropic API key. If real, it can allow unauthorized API usage and charges; the value is redacted.",
+    "pattern": "(?<![A-Za-z0-9_-])sk-ant-api03-[A-Za-z0-9_-]{93}AA(?![A-Za-z0-9_-])",
+    "case_insensitive": false,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule anthropic-api-key; adapted with explicit ASCII token boundaries: https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/anthropic.go"
+  },
+  {
+    "id": "FC-014",
+    "severity": "medium",
+    "name": "Possible committed Anthropic admin API key",
+    "description": "The package contains text shaped like an Anthropic admin API key. If real, it can expose administrative access to an organization; the value is redacted.",
+    "pattern": "(?<![A-Za-z0-9_-])sk-ant-admin01-[A-Za-z0-9_-]{93}AA(?![A-Za-z0-9_-])",
+    "case_insensitive": false,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule anthropic-admin-api-key; adapted with explicit ASCII token boundaries: https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/anthropic.go"
+  },
+  {
+    "id": "FC-015",
+    "severity": "medium",
+    "name": "Possible committed OpenAI API key",
+    "description": "The package contains text shaped like an OpenAI API key. If real, it can allow unauthorized API usage or account access; the value is redacted.",
+    "pattern": "(?<![A-Za-z0-9_-])sk-(?:(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})|[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20})(?![A-Za-z0-9_-])",
+    "case_insensitive": false,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule openai-api-key; retains legacy, project, service-account and admin formats, with explicit ASCII token boundaries (the upstream entropy filter is not applied): https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/openai.go"
+  },
+  {
+    "id": "FC-016",
+    "severity": "medium",
+    "name": "Possible committed Google API key",
+    "description": "The package contains text shaped like a Google API key. If unrestricted, it can allow unauthorized service usage and charges; the value is redacted.",
+    "pattern": "(?<![A-Za-z0-9_-])AIza(?!(?:Syabcdefghijklmnopqrstuvwxyz1234567|SyAnLA7NfeLquW1tJFpx_eQCxoX-oo6YyIs|SyCkEhVjf3pduRDt6d1yKOMitrUEke8agEM|SyDMAScliyLx7F0NPDEJi1QmyCgHIAODrlU|SyD3asb-2pEZVqMkmL6M9N6nHZRR_znhrh0|yDNSXIbFmlXbIE6mCzDLQAqITYefhixbX4A|SyAdOS2zB6NCsk1pCdZ4-P6GBdi_UUPwX7c|SyASWm6HmTMdYWpgMnjRBjxcQ9CKctWmLd4|SyANUvH9H9BsUccjsu2pCmEkOPjjaXeDQgY|SyA5_iVawFQ8ABuTZNUdcwERLJv_a_p4wtM|SyA4UrcGxgwQFTfaI3no3t7Lt1sjmdnP5sQ|SyDSb51JiIcB6OJpwwMicseKRhhrOq1cS7g|SyBF2RrAIm4a0mO64EShQfqfd2AFnzAvvuU|SyBcE-OOIbhjyR83gm4r2MFCu4MJmprNXsw|SyB8qGxt4ec15vitgn44duC5ucxaOi4FmqE|SyA8vmApnrHNFE0bApF4hoZ11srVL_n0nvY)(?![A-Za-z0-9_-]))(?!([A-Za-z0-9_-])\\1{34}(?![A-Za-z0-9_-]))[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])",
+    "case_insensitive": false,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule gcp-api-key; retains the upstream Firebase example allowlist, with explicit ASCII token boundaries and uniform-placeholder rejection instead of an entropy filter: https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/gcp.go"
+  },
+  {
+    "id": "FC-017",
+    "severity": "medium",
+    "name": "Possible committed Stripe secret key",
+    "description": "The package contains text shaped like a Stripe secret or restricted key. If real, it can expose payment operations or financial data; the value is redacted.",
+    "pattern": "(?<![A-Za-z0-9_-])(?:sk|rk)_(?:test|live|prod)_(?!([A-Za-z0-9])\\1{9,98}(?![A-Za-z0-9_-]))[A-Za-z0-9]{10,99}(?![A-Za-z0-9_-])",
+    "case_insensitive": false,
+    "redact": true,
+    "source": "Gitleaks MIT-licensed rule stripe-access-token; retains secret and restricted test/live/prod keys, with explicit ASCII token boundaries and uniform-placeholder rejection instead of an entropy filter: https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/stripe.go"
+  }
+]

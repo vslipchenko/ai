@@ -1,0 +1,1 @@
+{"path":"sample.env","parts":[{"text":"xapp-1-A"},{"repeat":"B2C3D","count":2},{"text":"-"},{"repeat":"1234567890","count":1},{"text":"-"},{"repeat":"a1b2c3d4","count":8},{"text":"\nXAPP-1-A"},{"repeat":"E4F5G","count":2},{"text":"-"},{"repeat":"2345678901","count":1},{"text":"-"},{"repeat":"e5f6a7b8","count":8}]}

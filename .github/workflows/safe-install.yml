@@ -1,0 +1,47 @@
+name: safe-install skill
+
+on:
+  push:
+    paths:
+      - 'skills/safe-install/**'
+      - '.github/workflows/safe-install.yml'
+      - '.github/annotate.py'
+  pull_request:
+    paths:
+      - 'skills/safe-install/**'
+      - '.github/workflows/safe-install.yml'
+      - '.github/annotate.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Unit tests and fixed-check fixture tests (one unittest discovery), with a fake
+# `claude`: no network, no paid calls. Results are reported as short annotations
+# (.github/annotate.py), so they can be read without downloading logs.
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.9', '3.x']
+    name: ${{ matrix.os }} (Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Tests
+        shell: bash
+        run: |
+          python --version
+          set +e
+          python -I -m unittest discover -s skills/safe-install/scripts/tests -t skills/safe-install/scripts -v > out.txt 2>&1
+          status=$?
+          cat out.txt
+          python .github/annotate.py "safe-install tests (${{ matrix.os }}, Python ${{ matrix.python }})" out.txt $status
+          exit $status

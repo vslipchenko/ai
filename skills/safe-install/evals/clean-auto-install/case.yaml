@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: clean-auto-install
+expected_outcome: |
+  Report that no issues were found (without claiming a guarantee) and install
+  without asking: run install for the digest without --approved, then discard.
