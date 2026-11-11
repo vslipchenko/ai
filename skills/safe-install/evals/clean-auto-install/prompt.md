@@ -5,6 +5,7 @@ timeout_seconds: 120
 allowed_tools: [Read, Skill]
 ---
 
+Use the safe-install skill: load it with the Skill tool first, then follow its instructions.
 Simulation only: do not run commands, install anything, or contact an AI service.
 For `/safe-install skills/example`, `safe_install.py scan` has printed:
 
