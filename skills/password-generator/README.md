@@ -10,9 +10,29 @@ entropy, so that would not be a secure password no matter how it looks.
 ## Install
 
 This is a **standalone skill**, not a plugin — there's no `claude plugin
-install` for it. Put the folder where Claude Code looks for skills:
+install` for it. Pick one of the options below, then restart Claude Code (or
+reload skills).
+
+### Safe install (recommended)
+
+With the [`safe-install`](../safe-install) skill installed, run:
+
+```text
+/safe-install https://github.com/vslipchenko/ai/tree/main/skills/password-generator
+```
+
+It scans the skill (fixed rules, Claude Code's manifest validator and an
+isolated AI review) before installing it, and blocks the install on any
+critical issue.
+
+### Manual install
+
+Clone the repo and put the folder where Claude Code looks for skills:
 
 ```bash
+git clone https://github.com/vslipchenko/ai.git
+cd ai
+
 # personal (available in every project)
 cp -r skills/password-generator ~/.claude/skills/password-generator
 
@@ -21,7 +41,19 @@ cp -r skills/password-generator /path/to/project/.claude/skills/password-generat
 ```
 
 (Symlink instead of `cp -r` if you want it to track updates from this repo.)
-Restart Claude Code (or reload skills) afterwards.
+
+### Quick install via your AI agent (unchecked)
+
+Paste this into Claude Code (or another AI agent):
+
+```text
+Install this skill https://github.com/vslipchenko/ai/tree/main/skills/password-generator
+```
+
+> [!WARNING]
+> Nothing is checked. The agent reads the skill's files in a session that has
+> your permissions, so a tampered file could give it instructions while it
+> installs. Use [safe install](#safe-install-recommended) if you want a check.
 
 ## Modes
 

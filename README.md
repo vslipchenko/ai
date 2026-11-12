@@ -13,6 +13,19 @@ plugins/<name>/                   one self-contained plugin per directory
 skills/<name>/                    standalone skills, independent of any plugin
 ```
 
+## Installing
+
+Every plugin and skill README lists up to three ways to install it:
+
+- **Safe install (recommended)**: install the [`safe-install`](skills/safe-install)
+  skill once, then `/safe-install <link or plugin>` scans each plugin or skill
+  before installing it and blocks the install on any critical issue.
+- **Manual install**: `claude plugin install` for plugins, or copy the folder
+  for skills.
+- **Quick install via your AI agent**: paste a one-line prompt such as
+  `Install this skill <link>`. Nothing is checked, so only use it for code
+  you trust.
+
 ## Plugins
 
 | Plugin | Description |

@@ -9,13 +9,45 @@ past tickets.
 
 ## Install
 
+Pick one of the options below, then restart Claude Code.
+
+### Safe install (recommended)
+
+With the [`safe-install`](../../skills/safe-install) skill installed, run:
+
+```text
+/safe-install jira-estimator --marketplace vslipchenko/ai
+```
+
+(or `/safe-install jira-estimator@vslipchenko` if you've already added the marketplace).
+It scans the plugin (fixed rules, Claude Code's manifest validator and an
+isolated AI review) before installing it, and blocks the install on any
+critical issue.
+
+### Manual install
+
 ```bash
 # register the marketplace, then install the plugin
 claude plugin marketplace add vslipchenko/ai
 claude plugin install jira-estimator@vslipchenko
 ```
 
-Then restart Claude Code. The plugin brings Atlassian's remote MCP server
+### Quick install via your AI agent (unchecked)
+
+Paste this into Claude Code:
+
+```text
+Install this plugin https://github.com/vslipchenko/ai/tree/main/plugins/jira-estimator
+```
+
+> [!WARNING]
+> Nothing is checked. The agent reads the plugin's files in a session that has
+> your permissions, so a tampered file could give it instructions while it
+> installs. Use [safe install](#safe-install-recommended) if you want a check.
+
+### After installing
+
+The plugin brings Atlassian's remote MCP server
 (`https://mcp.atlassian.com/v2/mcp`) with it: run `/mcp` once and sign in to
 Atlassian to connect it. Repository: <https://github.com/vslipchenko/ai/tree/main/plugins/jira-estimator>.
 

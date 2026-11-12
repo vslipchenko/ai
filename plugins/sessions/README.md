@@ -17,14 +17,44 @@ list automatically, so even a crash or a sudden reboot loses nothing.
 
 ## Install
 
+Pick one of the options below, then restart Claude Code.
+
+### Safe install (recommended)
+
+With the [`safe-install`](../../skills/safe-install) skill installed, run:
+
+```text
+/safe-install sessions --marketplace vslipchenko/ai
+```
+
+(or `/safe-install sessions@vslipchenko` if you've already added the marketplace).
+It scans the plugin (fixed rules, Claude Code's manifest validator and an
+isolated AI review) before installing it, and blocks the install on any
+critical issue.
+
+### Manual install
+
 ```bash
+# register the marketplace, then install the plugin
 claude plugin marketplace add vslipchenko/ai
 claude plugin install sessions@vslipchenko
 ```
 
-Then restart Claude Code.
+### Quick install via your AI agent (unchecked)
 
-**Requirements:**
+Paste this into Claude Code:
+
+```text
+Install this plugin https://github.com/vslipchenko/ai/tree/main/plugins/sessions
+```
+
+> [!WARNING]
+> Nothing is checked. The agent reads the plugin's files in a session that has
+> your permissions, so a tampered file could give it instructions while it
+> installs. Use [safe install](#safe-install-recommended) if you want a check.
+
+### Requirements
+
 - **Claude Code in a terminal** (the `claude` CLI). It saves and reopens
   terminal sessions only: sessions in Claude Desktop, the IDE extensions,
   claude.ai chat or Cowork are never listed, and the plugin can't do anything
