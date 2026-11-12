@@ -298,9 +298,9 @@ on an event — the label list is advisory, not enforced.
 
 Two things are genuinely required:
 
-- **Python 3 or Node ≥ 18** for the two bundled scripts (either works; they're
+- **[Python 3](https://www.python.org/downloads/) or [Node ≥ 18](https://nodejs.org/en/download)** for the two bundled scripts (either works; they're
   twins with identical flags and identical output).
-- **git** on `PATH` for local repo scanning.
+- **[git](https://git-scm.com/downloads)** on `PATH` for local repo scanning.
 
 Everything else is per-source, and each source needs **one** of:
 
@@ -309,8 +309,8 @@ Everything else is per-source, and each source needs **one** of:
 | Local git repos | nothing beyond `git` | works offline, no credentials |
 | Jira | an Atlassian/Jira MCP server, **or** `JIRA_EMAIL` + `JIRA_API_TOKEN` | |
 | Confluence | the same Atlassian credentials | one token covers both |
-| GitHub | `gh` (logged in), **or** `GITHUB_TOKEN` | GitHub Enterprise via `base_url` |
-| GitLab | `glab` (logged in), **or** `GITLAB_TOKEN` | self-managed via `base_url` |
+| GitHub | [`gh`](https://cli.github.com/) (logged in), **or** `GITHUB_TOKEN` | GitHub Enterprise via `base_url` |
+| GitLab | [`glab`](https://gitlab.com/gitlab-org/cli#installation) (logged in), **or** `GITLAB_TOKEN` | self-managed via `base_url` |
 | Bitbucket Cloud | app password / API token | no CLI or MCP path exists |
 
 ### Do I need to install an MCP?

@@ -23,7 +23,7 @@ and the installed copy is checked against it afterwards.
 - **Python 3.9 or later.** Only Python's standard library is used, so there's no
   `pip install`. Get Python from <https://www.python.org/downloads/>, or with
   `winget install Python.Python.3.13` on Windows and `brew install python` on macOS.
-- **Claude Code**, installed with the native installer (the `claude` program on
+- **Claude Code**, installed with the [native installer](https://code.claude.com/docs/en/setup) (the `claude` program on
   your PATH).
 
 Windows, macOS and Linux.

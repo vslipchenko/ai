@@ -153,7 +153,7 @@ untouched, and the next normal request goes back to using it.
 
 ## Requirements
 
-None beyond Claude Code itself — this skill is pure instructions/
+None beyond [Claude Code](https://code.claude.com/docs/en/setup) itself — this skill is pure instructions/
 reference material, no bundled script or runtime dependency.
 
 ## License

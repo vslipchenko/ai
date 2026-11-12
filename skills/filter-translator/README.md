@@ -158,7 +158,7 @@ or(and(eq(group,student),gt(age,20)),and(eq(group,senior),lt(age,80)))
 
 ## Requirements
 
-Python 3 or Node.js, for exact percent-encoding — used only when you ask for
+[Python 3](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download), for exact percent-encoding — used only when you ask for
 OData or RQL output embedded in an actual URL. If neither is available, a
 documented manual fallback (`references/rfc3986.md`) is used instead. No
 third-party packages either way. JQL/SQL/MongoDB output, and the raw

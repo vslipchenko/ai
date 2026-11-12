@@ -173,7 +173,7 @@ Set `AKINATOR_HOME` to keep state somewhere other than `~/.akinator`.
 
 ## Requirements
 
-Python 3 or Node.js, standard library only. Without either, "You think, I
+[Python 3](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download), standard library only. Without either, "You think, I
 guess" still works but isn't recorded. "I think, you guess" is refused,
 because the secret can't be committed to honestly.
 

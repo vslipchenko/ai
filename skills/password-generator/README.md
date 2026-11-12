@@ -130,7 +130,7 @@ secret in the first place.
 
 ## Requirements
 
-Python 3 or Node.js (no third-party packages either way — both use only
+[Python 3](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download) (no third-party packages either way — both use only
 their standard library's CSPRNG).
 
 ## License

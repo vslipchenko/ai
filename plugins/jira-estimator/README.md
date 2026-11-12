@@ -195,10 +195,10 @@ project.
 
 ## Requirements
 
-- An Atlassian (Jira) account. The plugin's Atlassian MCP server needs a
+- An [Atlassian (Jira) account](https://id.atlassian.com/signup). The plugin's Atlassian MCP server needs a
   one-time sign-in through `/mcp`.
-- For CSV assembly the plugin uses, in order of preference, Python 3, then
-  Node.js; if neither is available it falls back to building the CSV directly.
+- For CSV assembly the plugin uses, in order of preference, [Python 3](https://www.python.org/downloads/), then
+  [Node.js](https://nodejs.org/en/download); if neither is available it falls back to building the CSV directly.
   No third-party packages are required.
 
 ## License

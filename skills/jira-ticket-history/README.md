@@ -155,7 +155,7 @@ default".
 
 Genuinely required:
 
-- **Python 3 or Node ≥ 18** for the bundled scripts (either works; they're
+- **[Python 3](https://www.python.org/downloads/) or [Node ≥ 18](https://nodejs.org/en/download)** for the bundled scripts (either works; they're
   twins with identical flags and byte-identical output). No third-party
   packages.
 - **Read access to the ticket** in Jira, through one of:

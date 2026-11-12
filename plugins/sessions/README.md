@@ -55,13 +55,13 @@ Install this plugin https://github.com/vslipchenko/ai/tree/main/plugins/sessions
 
 ### Requirements
 
-- **Claude Code in a terminal** (the `claude` CLI). It saves and reopens
+- **[Claude Code](https://code.claude.com/docs/en/setup) in a terminal** (the `claude` CLI). It saves and reopens
   terminal sessions only: sessions in Claude Desktop, the IDE extensions,
   claude.ai chat or Cowork are never listed, and the plugin can't do anything
   when installed there.
-- **Windows** 10/11 with Windows PowerShell 5.1 (built in). Git Bash and Windows
-  Terminal are used when installed, never required.
-- **Linux** with Python 3 (preinstalled on almost every desktop distro). Works
+- **Windows** 10/11 with Windows PowerShell 5.1 (built in). [Git Bash](https://git-scm.com/downloads/win) and [Windows
+  Terminal](https://aka.ms/terminal) are used when installed, never required.
+- **Linux** with [Python 3](https://www.python.org/downloads/) (preinstalled on almost every desktop distro). Works
   under WSL too.
 - **macOS** with Python 3 from Apple's Command Line Tools (`/usr/bin/python3`;
   installed with `xcode-select --install`, and already there if you use `git`).
