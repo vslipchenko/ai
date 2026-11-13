@@ -721,13 +721,19 @@ def parse_inventory(text):
 
 
 class Gate:
-    def __init__(self, config=None, cwd=None, http=None, now=None, references=None):
+    def __init__(self, config=None, cwd=None, http=None, now=None, references=None, claude_command=None):
         self.cwd = Path(cwd or os.getcwd()).absolute()
         self.config = Path(config or os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").absolute()
         self.http = http or http_get
         self.now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
         self.references = Path(references or REFERENCES)
         self.rules = None
+        # Injected like `http`: tests pass a stand-in argv. The CLI never sets it,
+        # so nothing in the environment can replace the native `claude` lookup.
+        if claude_command is not None and (not isinstance(claude_command, (list, tuple)) or not claude_command
+                                           or not all(isinstance(x, str) for x in claude_command)):
+            raise GateError("claude_command must be a non-empty argv list")
+        self.claude_command = list(claude_command) if claude_command is not None else None
 
     def local(self, target):
         # Normalise `..` in a user-given path; links are still refused by Tree.
@@ -745,11 +751,8 @@ class Gate:
         return [e for e in entries if isinstance(e, dict)]
 
     def claude(self, args, stdin=None, review=False, allow_failure=False, cwd=None):
-        hook = os.environ.get("SAFE_INSTALL_CLAUDE")
-        if hook is not None:
-            command = json_load(hook)
-            if not isinstance(command, list) or not command or not all(isinstance(x, str) for x in command):
-                raise GateError("SAFE_INSTALL_CLAUDE must be a JSON argv list")
+        if self.claude_command is not None:
+            command = list(self.claude_command)
         else:
             executable = shutil.which("claude")
             if not executable:

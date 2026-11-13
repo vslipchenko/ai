@@ -32,6 +32,7 @@ skills/safe-install/
   scripts/safe_install.py           the gate (scan / install / discard)
   scripts/tests/test_safe_install.py
   scripts/tests/fake_claude.py      stand-in for `claude` in tests
+  scripts/tests/cli_with_fake_claude.py  the CLI with that stand-in injected (tests only)
   scripts/tests/fixtures/…
   references/reviewer-prompt.md     system prompt of the isolated AI reviewer
   references/review-schema.json     JSON schema the reviewer must answer in
@@ -225,8 +226,11 @@ produce zero fixed-check findings.
 
 ## 10. Tests
 
-`unittest`, no network, no paid calls. `fake_claude.py` replaces `claude` via env
-`SAFE_INSTALL_CLAUDE` (a JSON argv list; test hook only) and implements `-p` review,
+`unittest`, no network, no paid calls. `fake_claude.py` replaces `claude` through
+`Gate(claude_command=[argv…])`, injected like HTTP; the CLI never sets it and reads
+no environment override, so outside tests `claude` is always the native executable
+from PATH. The CLI test runs `tests/cli_with_fake_claude.py`, which is the same
+`main()` with the fake injected. `fake_claude.py` implements `-p` review,
 `plugin validate`, `plugin details`, `plugin install`, `plugin list`,
 `plugin uninstall`. HTTP is injected. Cover: clean → install without `--approved`;
 ask → refused without `--approved`; critical → block; incomplete / binary → block;

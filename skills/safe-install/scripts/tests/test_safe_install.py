@@ -19,7 +19,9 @@ import safe_install as si
 
 
 HERE = Path(__file__).resolve().parent
-SCRIPT = HERE.parent / "safe_install.py"
+FAKE_CLAUDE = [sys.executable, "-I", str(HERE / "fake_claude.py")]
+# Same CLI as safe_install.py, with the fake injected (the real CLI has no hook).
+CLI = HERE / "cli_with_fake_claude.py"
 
 
 class GateTests(unittest.TestCase):
@@ -36,7 +38,6 @@ class GateTests(unittest.TestCase):
         self.save_settings()
         self.environment = mock.patch.dict(os.environ, {
             "CLAUDE_CONFIG_DIR": str(self.config),
-            "SAFE_INSTALL_CLAUDE": json.dumps([sys.executable, "-I", str(HERE / "fake_claude.py")]),
             "FAKE_CLAUDE_CONFIG": str(self.fake_config), "FAKE_CLAUDE_LOG": str(self.log),
             "FAKE_CLAUDE_REGISTRY": str(self.base / "installed.json"),
             "FAKE_CLAUDE_INSTALL_ROOT": str(self.base / "installed"), "CLAUDECODE": "parent-session",
@@ -50,7 +51,8 @@ class GateTests(unittest.TestCase):
         self.clock = datetime.datetime(2026, 11, 11, 12, 0, tzinfo=datetime.timezone.utc)
         self.http_calls = []
         self.http_responses = {}
-        self.gate = si.Gate(config=self.config, cwd=self.cwd, http=self.http, now=lambda: self.clock)
+        self.gate = si.Gate(config=self.config, cwd=self.cwd, http=self.http, now=lambda: self.clock,
+                            claude_command=FAKE_CLAUDE)
 
     def save_settings(self):
         self.fake_config.write_text(json.dumps(self.settings), encoding="utf-8")
@@ -580,7 +582,7 @@ class GateTests(unittest.TestCase):
     def test_cli_json_version_usage_scan_install_discard(self):
         source = self.skill()
         def run(*args):
-            result = subprocess.run([sys.executable, "-I", str(SCRIPT)] + list(args), capture_output=True,
+            result = subprocess.run([sys.executable, "-I", str(CLI)] + list(args), capture_output=True,
                                     cwd=str(self.cwd), timeout=30)
             self.assertEqual(b"", result.stderr)
             return json.loads(result.stdout), result.returncode
@@ -605,11 +607,22 @@ class GateTests(unittest.TestCase):
         self.assertEqual("block", json.loads(output.getvalue())["verdict"])
 
     def test_native_windows_shims_are_refused(self):
-        with mock.patch.dict(os.environ, {}, clear=False):
-            del os.environ["SAFE_INSTALL_CLAUDE"]
-            with mock.patch.object(si.shutil, "which", return_value="C:\\tools\\claude.cmd"):
-                with self.assertRaises(si.GateError):
-                    self.gate.claude(["-p"])
+        native = si.Gate(config=self.config, cwd=self.cwd)
+        with mock.patch.object(si.shutil, "which", return_value="C:\\tools\\claude.cmd"):
+            with self.assertRaises(si.GateError):
+                native.claude(["-p"])
+
+    def test_environment_cannot_replace_the_claude_executable(self):
+        # The old SAFE_INSTALL_CLAUDE hook is gone: only the native lookup is used.
+        native = si.Gate(config=self.config, cwd=self.cwd)
+        with mock.patch.dict(os.environ, {"SAFE_INSTALL_CLAUDE": json.dumps(FAKE_CLAUDE)}), \
+                mock.patch.object(si.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(si.GateError, "Native Claude Code executable is not available"):
+                native.claude(["plugin", "list", "--json"])
+        self.assertFalse(self.calls())
+        for value in ([], "claude", [42]):
+            with self.subTest(value=value), self.assertRaises(si.GateError):
+                si.Gate(config=self.config, cwd=self.cwd, claude_command=value)
 
     def test_exact_snapshot_limits_and_over_limit_block(self):
         source = self.skill(files={"extra.txt": "12"})
@@ -878,7 +891,8 @@ class GateTests(unittest.TestCase):
         report = self.scan("example@demo", scope="project")
         other = self.base / "other-project"
         other.mkdir()
-        fresh_gate = si.Gate(config=self.config, cwd=other, http=self.http, now=lambda: self.clock)
+        fresh_gate = si.Gate(config=self.config, cwd=other, http=self.http, now=lambda: self.clock,
+                             claude_command=FAKE_CLAUDE)
         self.assertEqual("installed", fresh_gate.install(report["digest"])["status"])
         install = next(c for c in self.calls() if c["args"][:2] == ["plugin", "install"])
         self.assertEqual(str(self.cwd), install["cwd"])
