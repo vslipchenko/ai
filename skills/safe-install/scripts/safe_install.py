@@ -370,8 +370,7 @@ class Resolver:
             remaining = tail[length:]
             if parts[2] == "blob":
                 if not remaining:
-                    raise GateError("Blob URL has no file path")
-                remaining = remaining[:-1]
+                    raise GateError("Blob URL has no path")
             tree, subdir = self.github(repo, subdir="/".join(remaining), sha=sha)
             if parts[2] == "blob":
                 for count in range(len(remaining), -1, -1):
@@ -379,7 +378,6 @@ class Resolver:
                     skill_path = "/".join(filter(None, (folder, "SKILL.md")))
                     if tree.has(skill_path):
                         return tree, folder
-                raise GateError("Blob URL is not inside a skill")
             return tree, subdir
         raise GateError("No GitHub ref in the URL resolves to a commit")
 

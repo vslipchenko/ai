@@ -98,7 +98,10 @@ Deletes that staging folder. `SKILL.md` always calls it at the end.
 
 - **Local folder**, absolute or relative to the current directory.
 - **GitHub URL**: `https://github.com/<o>/<r>/tree/<ref>/<path>` or a `blob/` URL to
-  a file inside a skill (use its folder). Refs may contain `/`: use the longest
+  a skill folder containing `SKILL.md` or a file inside a skill (use the nearest
+  containing skill folder). If no containing skill is found, handle the full
+  `blob/` path like a `tree/` path; a folder of skills returns `choices`.
+  A `blob/` URL without a path is refused. Refs may contain `/`: use the longest
   prefix the GitHub API resolves to a commit. Pin to that SHA and download
   `https://codeload.github.com/<o>/<r>/zip/<sha>`. Validate only archive entries
   under the target path. Public github.com only, no credentials, redirects only to

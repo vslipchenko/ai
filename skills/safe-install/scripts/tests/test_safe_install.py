@@ -246,14 +246,36 @@ class GateTests(unittest.TestCase):
         self.assertEqual("clean", report["verdict"])
         self.assertEqual("a" * 40, report["source"]["commit"])
         self.assertIn("feature%2Ffix", " ".join(self.http_calls))
+        digest = report["digest"]
+        self.gate.discard(report["digest"])
+        report = self.scan("https://github.com/owner/repo/blob/feature/fix/skills/example")
+        self.assertEqual("clean", report["verdict"])
+        self.assertEqual("example", report["name"])
+        self.assertEqual(digest, report["digest"])
         self.gate.discard(report["digest"])
         report = self.scan("https://github.com/owner/repo/blob/feature/fix/skills/example/SKILL.md")
         self.assertEqual("clean", report["verdict"])
+        self.assertEqual(digest, report["digest"])
         self.gate.discard(report["digest"])
         report = self.scan("https://github.com/owner/repo/blob/feature/fix/skills/example/scripts/helper.py")
         self.assertEqual("clean", report["verdict"])
         self.assertEqual("example", report["name"])
+        self.assertEqual(digest, report["digest"])
+        self.gate.discard(report["digest"])
+        report = self.scan("https://github.com/owner/repo/blob/feature/fix")
+        self.assertEqual("block", report["verdict"])
+        self.assertIn("Blob URL has no path", report["reasons"])
         self.assertTrue(all("github.com" in url for url in self.http_calls))
+
+    def test_github_blob_folder_of_skills_returns_choices(self):
+        self.remote("owner/repo", {"skills/first/SKILL.md": "First skill",
+                                  "skills/second/SKILL.md": "Second skill"}, ref="main")
+        for kind in ("tree", "blob"):
+            with self.subTest(kind=kind):
+                report = self.scan("https://github.com/owner/repo/{}/main/skills".format(kind))
+                self.assertEqual(["first", "second"], report["choices"])
+                self.assertIsNone(report["verdict"])
+        self.assertFalse(self.calls())
 
     def test_marketplace_choices_and_folder_choices(self):
         market = self.market([{"name": "one", "source": "./one"}, {"name": "two", "source": "./two"}])
