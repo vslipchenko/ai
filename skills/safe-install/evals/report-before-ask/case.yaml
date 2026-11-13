@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: report-before-ask
+expected_outcome: |
+  Write the full Step 4 report, with all four LOW findings in a table, as text
+  before asking. The Yes/No question itself lists each finding. Never install or
+  pass --approved without a Yes.
